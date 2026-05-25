@@ -1,6 +1,6 @@
-# Dokumentenportal
+# Atlas
 
-Eine kleine Docusaurus-aehnliche Plattform fuer interne Dokumentation, Richtlinien oder Wissensseiten mit Markdown/HTML-Seiten, rollenbasiertem Zugriff, SQLite-Backend und Adminbereich.
+Atlas is a lightweight documentation portal for internal knowledge, policies, and team handbooks. It renders Markdown content with role-based access, an SQLite backend, and a built-in admin area.
 
 ## Start
 
@@ -8,99 +8,70 @@ Eine kleine Docusaurus-aehnliche Plattform fuer interne Dokumentation, Richtlini
 npm.cmd run dev
 ```
 
-Danach ist die App standardmaessig unter `http://localhost:3000` erreichbar.
+The app is available at `http://localhost:3000`.
 
-Beim ersten Start wird ein Admin-Benutzer angelegt:
+Default admin account:
 
-- Benutzer: `admin@example.com`
-- Passwort: `ChangeMe123!`
+- Email: `admin@example.com`
+- Password: `ChangeMe123!`
 
-Bitte direkt im Adminbereich aendern.
+Change the password after the first sign-in.
 
 ## Docker
 
-Die Anwendung benoetigt keinen separaten Datenbankdienst. SQLite-Daten liegen im Container unter `/app/data` und sollten als Volume persistiert werden.
+Atlas uses SQLite and does not require a separate database service.
 
 ```powershell
 docker compose up --build
 ```
 
-Wichtige Umgebungsvariablen:
+Useful environment variables:
 
-- `PORT`: HTTP-Port im Container, Standard `3000`
-- `HOST`: Bind-Adresse, im Container `0.0.0.0`
-- `DATA_DIR`: Speicherort fuer SQLite, Standard im Dockerfile `/app/data`
+- `PORT`: HTTP port inside the container, default `3000`
+- `HOST`: bind address, `0.0.0.0` in Docker
+- `DATA_DIR`: SQLite storage path, default `/app/data`
 
-## Startseite
+## Content structure
 
-Die Hauptseite liegt in `content/home.md`. Sie wird nach dem Login unter `/` angezeigt. Markdown und einfache HTML-Bloecke koennen gemischt werden, z. B. fuer Kacheln oder eigene Layouts.
-
-## Inhalte und Navigation
-
-Neue Richtlinien liegen in `content/docs`. Die Seitenleiste wird automatisch aus Ordnern und Markdown-Dateien erzeugt:
+The home page lives in `content/home.md`. Documentation pages live in `content/docs`, and the sidebar is generated from folders plus optional `category.json` files.
 
 ```text
-content/docs/
-  isms-grundlagen/
-    category.json
-    index.md
-    informationssicherheitsleitlinie.md
+content/
+  home.md
+  docs/
+    getting-started/
+      category.json
+      index.md
+      authoring-content.md
 ```
 
-`category.json` beschreibt den Navigationspunkt und optionale Rollen:
+Example `category.json`:
 
 ```json
 {
-  "label": "ISMS Grundlagen",
+  "label": "Getting Started",
   "position": 1,
-  "roles": ["isms-admin", "employee"]
+  "roles": ["Users"]
 }
 ```
 
-`index.md` ist die Hauptseite der Kategorie und wird angezeigt, wenn die Kategorie angeklickt wird. Jede Markdown-Datei nutzt Frontmatter:
-Mit `position` in `category.json` oder `sidebar_position` im Frontmatter kann die Reihenfolge gesteuert werden.
+Example frontmatter:
 
 ```md
 ---
-title: Informationssicherheitsleitlinie
-description: Grundsaetze und Verantwortlichkeiten.
-roles: [isms-admin, employee]
-owner: ISMS-Team
+title: Authoring Content
+description: Use Markdown files and folders to grow the documentation space.
+roles: [Users]
+owner: Atlas
 version: "1.0"
-reviewDate: 2026-12-31
+reviewDate: 2027-01-01
 ---
 ```
 
-Rollen in einer Markdown-Datei ueberschreiben die Rollen der Kategorie. Ohne eigene Rollen erbt eine Seite die Rollen aus `category.json`.
+## Admin area
 
-## Design und Admin-Einstellungen
+The admin portal can manage users, roles, branding, login copy, themes, menu links, and Entra ID settings. It also includes a factory reset action that clears SQLite data and restores the default Atlas setup.
 
-Im Adminbereich koennen Portalname, Sidebar-Titel, Logo, Standard-Sprache, Standard-Theme, Theme-Farbe, globale Schriftgroesse, Login-Texte, Login-Hintergrund, Entra-ID-Anmeldung, Rollenfarben und Menueleisten-Links angepasst werden. Fuer den Login-Hintergrund stehen ein statischer Hintergrund, eine Bild-URL und ein animierter Netzwerk-Hintergrund zur Auswahl.
+## Database behavior
 
-## Sprachen
-
-UI-Uebersetzungen liegen in `locales/*.json`. Vorhanden sind `de`, `en` und `fr`. Neue Sprachen koennen durch eine weitere JSON-Datei mit `code`, `flag`, `nativeName` und `ui`-Texten ergaenzt werden. Nutzer waehlen ihre Sprache im Profilmenue; ohne eigene Auswahl wird zuerst die Browser-Sprache verwendet und danach die im Adminbereich gesetzte Standard-Sprache.
-
-Die obere Menueleiste wird ueber JSON konfiguriert:
-
-```json
-[
-  { "label": "Richtlinien", "href": "/", "roles": [] },
-  { "label": "Admin", "href": "/admin", "roles": ["isms-admin"] }
-]
-```
-
-Nutzer koennen ueber ihren Namen oben rechts ihr Profil oeffnen und Name, E-Mail sowie Passwort selbst pflegen. Bei Aenderungen muss das aktuelle Passwort eingegeben werden; neue Passwoerter muessen bestaetigt werden. Gruppenmitgliedschaften werden dort angezeigt.
-
-## Entra ID
-
-Die Entra-Anmeldung ist optional. Setze dafuer Umgebungsvariablen:
-
-```powershell
-$env:ENTRA_TENANT_ID="..."
-$env:ENTRA_CLIENT_ID="..."
-$env:ENTRA_CLIENT_SECRET="..."
-$env:ENTRA_REDIRECT_URI="http://localhost:3000/auth/entra/callback"
-```
-
-Wenn diese Werte fehlen, bleibt die lokale Anmeldung aktiv und der Entra-Button zeigt einen Hinweis.
+If `data.sqlite` is deleted and the app is started again, Atlas recreates the database automatically and seeds it with the default Admin account, roles, and settings.

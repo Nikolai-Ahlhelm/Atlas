@@ -1,6 +1,6 @@
 const I18N = readPortalI18n().messages || {};
 const msg = (key, fallback) => I18N[key] || fallback || key;
-const savedTheme = localStorage.getItem('isms-theme') || document.body.dataset.defaultTheme || 'light';
+const savedTheme = localStorage.getItem('atlas-theme') || localStorage.getItem('isms-theme') || document.body.dataset.defaultTheme || 'light';
 document.documentElement.dataset.theme = savedTheme;
 
 document.addEventListener('click', (event) => {
@@ -21,7 +21,7 @@ document.addEventListener('click', (event) => {
   if (themeToggle) {
     const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
     document.documentElement.dataset.theme = next;
-    localStorage.setItem('isms-theme', next);
+    localStorage.setItem('atlas-theme', next);
   }
   if (profileOpen && profile) profile.hidden = !profile.hidden;
   if (profileClose && profile) profile.hidden = true;

@@ -9,6 +9,7 @@
   --primary-dark: #174b90;
   --accent: #1d947c;
   --danger: #b73737;
+  --surface-danger: color-mix(in srgb, var(--danger) 16%, var(--surface));
   --shadow: 0 18px 45px rgba(30, 52, 84, 0.12);
   --font-scale: 1;
   color-scheme: light;
@@ -187,6 +188,17 @@ select {
   color: var(--text);
   font-weight: 750;
   text-align: left;
+  border-radius: 6px;
+}
+
+.nav-group-title:hover {
+  background: color-mix(in srgb, var(--primary) 13%, var(--surface));
+  color: var(--primary-dark);
+}
+
+.nav-group-title.active {
+  background: color-mix(in srgb, var(--primary) 13%, var(--surface));
+  color: var(--primary-dark);
 }
 
 .nav-category-link,
@@ -211,11 +223,17 @@ select {
   background: transparent;
   color: var(--muted);
   cursor: pointer;
+  font-size: 24px;
+  position: relative;
 }
 
 .nav-caret::before {
-  content: ">";
-  display: block;
+  content: "›";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  transform-origin: center;
   transform: rotate(90deg);
   transition: transform 180ms ease;
 }
@@ -235,6 +253,8 @@ select {
   opacity: 1;
   transition: max-height 220ms ease, opacity 180ms ease;
 }
+
+
 
 .collapsed .nav-group-items {
   max-height: 0;
@@ -309,6 +329,11 @@ select {
 
 .crumb-separator {
   color: var(--muted);
+  font-size: 20px;
+}
+
+.crumb-home-icon {
+  font-size: 20px;
 }
 
 .policy-header {
@@ -486,6 +511,7 @@ dd {
 
 .button.danger {
   color: var(--danger);
+  background: var(--surface-danger);
 }
 
 .button.small {
@@ -511,8 +537,8 @@ dd {
 
 .theme-toggle {
   position: relative;
-  width: 52px;
-  height: 30px;
+  width: 72px;
+  height: 40px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--surface-soft);
@@ -520,26 +546,24 @@ dd {
 }
 
 .theme-toggle::before {
-  content: "☀";
+  content: "🌙";
   position: absolute;
-  left: 8px;
-  top: 50%;
+  left: 53%;
+  top: 25%;
   z-index: 1;
-  transform: translateY(-50%);
   color: var(--muted);
-  font-size: 13px;
+  font-size: 20px;
   line-height: 1;
 }
 
 .theme-toggle::after {
-  content: "☾";
+  content: "☀️";
   position: absolute;
-  right: 8px;
-  top: 50%;
+  right: 53%;
+  top: 25%;
   z-index: 1;
-  transform: translateY(-50%);
   color: var(--muted);
-  font-size: 14px;
+  font-size: 20px;
   line-height: 1;
 }
 
@@ -547,15 +571,15 @@ dd {
   position: absolute;
   top: 4px;
   left: 4px;
-  width: 20px;
-  height: 20px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   background: var(--primary);
   transition: transform 180ms ease;
 }
 
 :root[data-theme="dark"] .theme-toggle span {
-  transform: translateX(22px);
+  transform: translateX(100%);
 }
 
 .mobile-only {
@@ -646,6 +670,21 @@ dd {
   margin-bottom: 24px;
 }
 
+.admin-error {
+  margin-bottom: 22px;
+  border-color: color-mix(in srgb, var(--danger) 24%, var(--line));
+}
+
+.admin-error strong {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.admin-error p {
+  margin: 0;
+  color: var(--muted);
+}
+
 .admin-header h1 {
   font-size: calc(36px * var(--font-scale));
 }
@@ -666,6 +705,23 @@ dd {
 
 .settings-panel {
   grid-column: 1 / -1;
+}
+
+.danger-panel {
+  grid-column: 1 / -1;
+  border-color: color-mix(in srgb, var(--danger) 28%, var(--line));
+}
+
+.danger-panel-body {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+}
+
+.danger-panel-body p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
 }
 
 .panel-head {

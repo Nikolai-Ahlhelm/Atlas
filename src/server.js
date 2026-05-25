@@ -16,79 +16,27 @@ const DATA_DIR = process.env.DATA_DIR ? normalize(process.env.DATA_DIR) : join(R
 const DB_PATH = join(DATA_DIR, 'data.sqlite');
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '127.0.0.1';
-const COOKIE_NAME = 'isms_session';
+const COOKIE_NAME = 'atlas_session';
 const PACKAGE_JSON = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
 const LOCALES = loadLocales();
 
-if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
-
-const db = new DatabaseSync(DB_PATH);
-db.exec(`
-  PRAGMA journal_mode = WAL;
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email TEXT NOT NULL UNIQUE,
-    name TEXT NOT NULL,
-    password_hash TEXT,
-    provider TEXT NOT NULL DEFAULT 'local',
-    is_admin INTEGER NOT NULL DEFAULT 0,
-    active INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-  );
-  CREATE TABLE IF NOT EXISTS roles (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL UNIQUE,
-    description TEXT NOT NULL DEFAULT ''
-  );
-  CREATE TABLE IF NOT EXISTS user_roles (
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
-    PRIMARY KEY (user_id, role_id)
-  );
-  CREATE TABLE IF NOT EXISTS sessions (
-    token_hash TEXT PRIMARY KEY,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    expires_at INTEGER NOT NULL,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-  );
-  CREATE TABLE IF NOT EXISTS oauth_states (
-    state TEXT PRIMARY KEY,
-    verifier TEXT NOT NULL,
-    expires_at INTEGER NOT NULL
-  );
-  CREATE TABLE IF NOT EXISTS settings (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL
-  );
-`);
-
-ensureColumn('roles', 'color', "TEXT NOT NULL DEFAULT '#5d6b82'");
-ensureColumn('users', 'language', 'TEXT');
-
 const DEFAULT_ROLES = [
-  ['admin', 'Verwaltet ISMS-Inhalte und administrative Richtlinien.', '#b45309'],
-  ['employee', 'Standardzugriff fuer Mitarbeitende.', '#2368c4'],
-  ['it', 'Zugriff auf IT-nahe Richtlinien.', '#1d947c'],
-  ['auditor', 'Zugriff auf Audit- und Review-Unterlagen.', '#8b5cf6']
+  ['Admins', 'Full administration access for Atlas.', '#b45309'],
+  ['Users', 'Standard access to shared Atlas documentation.', '#2368c4']
 ];
 
-for (const [name, description, color] of DEFAULT_ROLES) {
-  db.prepare('INSERT OR IGNORE INTO roles (name, description, color) VALUES (?, ?, ?)').run(name, description, color);
-}
-
 const DEFAULT_SETTINGS = {
-  app_name: 'Dokumentenportal',
-  sidebar_title: 'Dokumente',
-  logo_text: 'DP',
+  app_name: 'Atlas',
+  sidebar_title: 'Atlas Docs',
+  logo_text: 'AT',
   logo_image: '',
-  default_language: 'de',
+  default_language: 'en',
   default_theme: 'light',
   theme_color: '#2368c4',
   font_scale: '1',
-  login_eyebrow: 'Dokumentenportal',
-  login_title: 'Richtlinien zentral, sicher und schnell auffindbar.',
-  login_text: 'Markdown-basierte Inhalte, rollenbasierter Zugriff und ein Adminbereich fuer Benutzerverwaltung.',
+  login_eyebrow: 'Atlas',
+  login_title: 'Documentation your team can shape in minutes.',
+  login_text: 'Atlas turns Markdown folders into a secure, searchable workspace with role-based access and a built-in admin area.',
   login_background_mode: 'network',
   login_background_image: '',
   entra_enabled: 'false',
@@ -96,32 +44,37 @@ const DEFAULT_SETTINGS = {
   entra_client_id: '',
   entra_client_secret: '',
   entra_redirect_uri: '',
-  footer_text: 'Internes Dokumentenportal',
+  footer_text: 'Atlas',
   copyright_holder: '',
   menu_links: JSON.stringify([
-    { label: 'Dokumente', href: '/', roles: [] }
+    { label: 'Documentation', href: '/', roles: [] }
   ])
 };
 
-for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
-  db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)').run(key, value);
-}
-removeAdminFromDefaultMenuLinks();
+const LEGACY_SETTING_MIGRATIONS = {
+  app_name: { from: 'Dokumentenportal', to: DEFAULT_SETTINGS.app_name },
+  sidebar_title: { from: 'Dokumente', to: DEFAULT_SETTINGS.sidebar_title },
+  logo_text: { from: 'DP', to: DEFAULT_SETTINGS.logo_text },
+  default_language: { from: 'de', to: DEFAULT_SETTINGS.default_language },
+  login_eyebrow: { from: 'Dokumentenportal', to: DEFAULT_SETTINGS.login_eyebrow },
+  login_title: { from: ['Richtlinien zentral, sicher und schnell auffindbar.', 'Dokumente zentral, sicher und schnell auffindbar.'], to: DEFAULT_SETTINGS.login_title },
+  login_text: { from: ['Markdown-basierte Inhalte, rollenbasierter Zugriff und ein Adminbereich fuer Benutzerverwaltung.', 'Markdown-basierte Inhalte, rollenbasierter Zugriff und ein umfangreicher Adminbereich.'], to: DEFAULT_SETTINGS.login_text },
+  footer_text: { from: 'Internes Dokumentenportal', to: DEFAULT_SETTINGS.footer_text },
+  menu_links: {
+    from: JSON.stringify([{ label: 'Dokumente', href: '/', roles: [] }], null, 2),
+    to: JSON.stringify([{ label: 'Documentation', href: '/', roles: [] }], null, 2)
+  }
+};
 
-const userCount = db.prepare('SELECT COUNT(*) AS count FROM users').get().count;
-if (userCount === 0) {
-  const info = db.prepare(`
-    INSERT INTO users (email, name, password_hash, is_admin)
-    VALUES (?, ?, ?, 1)
-  `).run('admin@example.com', 'Admin', hashPassword('ChangeMe123!'));
-  const roleId = db.prepare('SELECT id FROM roles WHERE name = ?').get('admin').id;
-  db.prepare('INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)').run(info.lastInsertRowid, roleId);
-}
+if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
+
+const db = new DatabaseSync(DB_PATH);
+initializeDatabase();
 
 let catalog = loadCatalog();
 
 if (process.argv.includes('--check')) {
-  console.log(`OK: ${catalog.policies.length} Richtlinien geladen.`);
+  console.log(`OK: loaded ${catalog.policies.length} documents.`);
   process.exit(0);
 }
 
@@ -130,12 +83,12 @@ const server = createServer(async (req, res) => {
     await route(req, res);
   } catch (error) {
     console.error(error);
-    sendHtml(res, 500, renderShell({ title: 'Fehler', body: errorPage('Ein unerwarteter Fehler ist aufgetreten.') }));
+    sendHtml(res, 500, renderShell({ title: 'Error', body: errorPage('An unexpected error occurred.') }));
   }
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`Dokumentenportal laeuft auf http://${HOST}:${PORT}`);
+  console.log(`Atlas laeuft auf http://${HOST}:${PORT}`);
 });
 
 async function route(req, res) {
@@ -164,6 +117,7 @@ async function route(req, res) {
   if (url.pathname.startsWith('/api/admin/roles/') && req.method === 'DELETE') return requireAdmin(user, res, () => handleDeleteRole(res, url.pathname));
   if (url.pathname === '/api/admin/settings' && req.method === 'GET') return requireAdmin(user, res, () => sendJson(res, 200, getSettings()));
   if (url.pathname === '/api/admin/settings' && req.method === 'POST') return requireAdmin(user, res, () => handleUpdateSettings(req, res));
+  if (url.pathname === '/api/admin/reset' && req.method === 'POST') return requireAdmin(user, res, () => handleFactoryReset(req, res));
   if (url.pathname === '/api/admin/reload' && req.method === 'POST') return requireAdmin(user, res, () => {
     catalog = loadCatalog();
     sendJson(res, 200, { ok: true, policies: catalog.policies.length });
@@ -180,6 +134,158 @@ async function route(req, res) {
   }
 
   sendHtml(res, 404, renderApp({ user, activeSlug: null, notice: t(locale, 'notFoundPage'), locale }));
+}
+
+function initializeDatabase() {
+  db.exec(`
+    PRAGMA journal_mode = WAL;
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      password_hash TEXT,
+      provider TEXT NOT NULL DEFAULT 'local',
+      is_admin INTEGER NOT NULL DEFAULT 0,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS roles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      description TEXT NOT NULL DEFAULT ''
+    );
+    CREATE TABLE IF NOT EXISTS user_roles (
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+      PRIMARY KEY (user_id, role_id)
+    );
+    CREATE TABLE IF NOT EXISTS sessions (
+      token_hash TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      expires_at INTEGER NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS oauth_states (
+      state TEXT PRIMARY KEY,
+      verifier TEXT NOT NULL,
+      expires_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+  `);
+
+  ensureColumn('roles', 'color', "TEXT NOT NULL DEFAULT '#5d6b82'");
+  ensureColumn('users', 'language', 'TEXT');
+
+  seedFactoryData();
+}
+
+function seedFactoryData() {
+  for (const [name, description, color] of DEFAULT_ROLES) {
+    db.prepare('INSERT OR IGNORE INTO roles (name, description, color) VALUES (?, ?, ?)').run(name, description, color);
+    db.prepare('UPDATE roles SET description = ?, color = ? WHERE name = ?').run(description, color, name);
+  }
+
+  migrateLegacyRoles();
+
+  for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
+    db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)').run(key, value);
+  }
+
+  migrateLegacySettings();
+  removeAdminFromDefaultMenuLinks();
+  ensureFactoryAdminUser();
+  ensureDefaultRoleCoverage();
+}
+
+function migrateLegacyRoles() {
+  const roleRows = db.prepare('SELECT id, name FROM roles').all();
+  const adminsRoleId = db.prepare('SELECT id FROM roles WHERE name = ?').get('Admins')?.id;
+  const usersRoleId = db.prepare('SELECT id FROM roles WHERE name = ?').get('Users')?.id;
+  const adminAliases = new Set(['admin', 'isms-admin']);
+  const userAliases = new Set(['employee', 'it', 'auditor']);
+
+  for (const role of roleRows) {
+    if (role.name === 'Admins' || role.name === 'Users') continue;
+
+    const targetRoleId = adminAliases.has(role.name) ? adminsRoleId : usersRoleId;
+    if (targetRoleId) {
+      db.prepare(`
+        INSERT OR IGNORE INTO user_roles (user_id, role_id)
+        SELECT user_id, ? FROM user_roles WHERE role_id = ?
+      `).run(targetRoleId, role.id);
+    }
+    db.prepare('DELETE FROM user_roles WHERE role_id = ?').run(role.id);
+    db.prepare('DELETE FROM roles WHERE id = ?').run(role.id);
+  }
+}
+
+function migrateLegacySettings() {
+  for (const [key, migration] of Object.entries(LEGACY_SETTING_MIGRATIONS)) {
+    const fromValues = Array.isArray(migration.from) ? migration.from : [migration.from];
+    for (const fromValue of fromValues) {
+      db.prepare(`
+        UPDATE settings
+        SET value = ?
+        WHERE key = ? AND value = ?
+      `).run(migration.to, key, fromValue);
+    }
+  }
+}
+
+function ensureFactoryAdminUser() {
+  const userCount = db.prepare('SELECT COUNT(*) AS count FROM users').get().count;
+  if (userCount === 0) {
+    db.prepare(`
+      INSERT INTO users (email, name, password_hash, is_admin)
+      VALUES (?, ?, ?, 1)
+    `).run('admin@example.com', 'Admin', hashPassword('ChangeMe123!'));
+  }
+}
+
+function ensureDefaultRoleCoverage() {
+  const adminsRoleId = db.prepare('SELECT id FROM roles WHERE name = ?').get('Admins')?.id;
+  const usersRoleId = db.prepare('SELECT id FROM roles WHERE name = ?').get('Users')?.id;
+
+  if (adminsRoleId) {
+    db.prepare(`
+      INSERT OR IGNORE INTO user_roles (user_id, role_id)
+      SELECT id, ? FROM users WHERE is_admin = 1
+    `).run(adminsRoleId);
+  }
+
+  if (usersRoleId) {
+    db.prepare(`
+      INSERT OR IGNORE INTO user_roles (user_id, role_id)
+      SELECT u.id, ?
+      FROM users u
+      LEFT JOIN user_roles ur ON ur.user_id = u.id
+      WHERE u.is_admin = 0 AND ur.user_id IS NULL
+    `).run(usersRoleId);
+  }
+}
+
+function resetDatabaseToFactoryDefaults() {
+  db.exec('BEGIN');
+  try {
+    db.exec(`
+      DELETE FROM user_roles;
+      DELETE FROM sessions;
+      DELETE FROM oauth_states;
+      DELETE FROM users;
+      DELETE FROM roles;
+      DELETE FROM settings;
+      DELETE FROM sqlite_sequence WHERE name IN ('users', 'roles');
+    `);
+    seedFactoryData();
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
 }
 
 function loadCatalog() {
@@ -244,7 +350,7 @@ function scanDocsDirectory(dir, relativeDir, inheritedRoles, policies) {
     else items.push(slug);
   }
 
-  const fallbackLabel = relativeDir ? titleFromSlug(relativeDir.split('/').pop()) : 'Richtlinien';
+  const fallbackLabel = relativeDir ? titleFromSlug(relativeDir.split('/').pop()) : 'Documentation';
   return {
     items,
     categoryItem: {
@@ -396,7 +502,7 @@ function renderApp({ user, activeSlug, policy, notice, locale }) {
         <aside class="sidebar" id="sidebar">
           <div class="sidebar-head">
             <span>${escapeHtml(settings.sidebar_title)}</span>
-            <button class="icon-button mobile-only" data-sidebar-close aria-label="Navigation schliessen">x</button>
+            <button class="icon-button mobile-only" data-sidebar-close aria-label="Close navigation">x</button>
           </div>
           <nav class="doc-nav">${renderSidebar(catalog.sidebar, user, active)}</nav>
         </aside>
@@ -417,15 +523,15 @@ function renderTopbar(user, locale) {
   return `
     <header class="topbar">
       <div class="brand">
-        <button class="icon-button mobile-only" data-sidebar-open aria-label="Navigation oeffnen">☰</button>
+        <button class="icon-button mobile-only" data-sidebar-open aria-label="Open navigation">☰</button>
         <a href="/" class="brand-mark">${settings.logo_image ? `<img src="${escapeAttribute(settings.logo_image)}" alt="">` : escapeHtml(settings.logo_text)}</a>
         <a href="/" class="brand-title">${escapeHtml(settings.app_name)}</a>
       </div>
       <nav class="top-links">${links.map((link) => `<a href="${escapeHtml(link.href)}">${escapeHtml(link.label)}</a>`).join('')}</nav>
       <div class="top-actions">
-        ${user.is_admin ? `<a class="button ghost" href="/admin">🔧 ${t(locale, 'admin')}</a>` : ''}
-        <button class="theme-toggle" type="button" data-theme-toggle aria-label="Dark Mode umschalten"><span></span></button>
-        <button class="button user-menu-trigger" type="button" data-profile-open>${escapeHtml(user.name)}</button>
+        ${user.is_admin ? `<a class="button ghost" href="/admin">${t(locale, 'admin')}</a>` : ''}
+        <button class="theme-toggle" type="button" data-theme-toggle aria-label="Toggle theme"><span></span></button>
+        <button class="button user-menu-trigger" type="button" data-profile-open>👤 ${escapeHtml(user.name)}</button>
         <form action="/api/logout" method="post"><button class="button" type="submit">${t(locale, 'logout')}</button></form>
       </div>
     </header>
@@ -448,12 +554,12 @@ function renderSidebar(items, user, activeSlug) {
     const containsActive = sidebarContainsActive(item.items || [], activeSlug);
     const title = categoryPolicy && canSeeCategory
       ? `<a class="nav-category-link ${isActive ? 'active' : ''}" href="/policy/${encodeURIComponent(categoryPolicy.slug)}">${escapeHtml(item.label || categoryPolicy.title)}</a>`
-      : `<span class="nav-category-label">${escapeHtml(item.label || 'Kategorie')}</span>`;
+      : `<span class="nav-category-label">${escapeHtml(item.label || 'Category')}</span>`;
     return `
       <section class="nav-group ${containsActive || isActive ? 'active-group' : ''}">
         <div class="nav-group-title">
           ${title}
-          <button class="nav-caret" data-toggle-section type="button" aria-label="Kategorie einklappen"></button>
+          <button class="nav-caret" data-toggle-section type="button" aria-label="Collapse category"></button>
         </div>
         <div class="nav-group-items">${children}</div>
       </section>
@@ -498,7 +604,7 @@ function renderPolicy(policy, locale) {
       ${renderBreadcrumbs(breadcrumbs, policy)}
       <div class="policy-header">
         <div>
-          <p class="eyebrow">${escapeHtml(policy.owner || 'ISMS')}</p>
+          <p class="eyebrow">${escapeHtml(policy.owner || 'Atlas')}</p>
           <h1>${escapeHtml(policy.title)}</h1>
           <p>${escapeHtml(policy.description)}</p>
         </div>
@@ -520,7 +626,7 @@ function renderBreadcrumbs(breadcrumbs, policy) {
   const trail = breadcrumbs.length ? breadcrumbs : [{ label: policy.title, href: `/policy/${encodeURIComponent(policy.slug)}` }];
   return `
     <nav class="breadcrumbs" aria-label="Breadcrumb">
-      <a href="/" aria-label="Hauptseite">⌂</a>
+      <a class="crumb-home-icon"href="/" aria-label="Home">💠</a>
       ${trail.map((item, index) => `
         <span class="crumb-separator">›</span>
         <a class="${index === trail.length - 1 ? 'current' : ''}" href="${escapeHtml(item.href)}">${escapeHtml(item.label)}</a>
@@ -532,7 +638,7 @@ function renderBreadcrumbs(breadcrumbs, policy) {
 function renderToc(policy) {
   if (!policy.headings?.length) return '';
   return `
-    <aside class="toc" aria-label="Inhaltsverzeichnis">
+    <aside class="toc" aria-label="Table of contents">
       ${policy.headings.map((heading) => `<a class="toc-level-${heading.level}" href="#${escapeHtml(heading.id)}">${escapeHtml(heading.text)}</a>`).join('')}
     </aside>
   `;
@@ -556,28 +662,29 @@ function renderAdmin(user, locale) {
         <div class="admin-header">
           <div>
             <p class="eyebrow">${t(locale, 'administration')}</p>
-            <h1>🔧 ${t(locale, 'adminPortal')}</h1>
+            <h1>${t(locale, 'adminPortal')}</h1>
           </div>
-          <button class="button primary" data-reload-content type="button">🔄️ ${t(locale, 'reloadMarkdown')}</button>
+          <button class="button primary" data-reload-content type="button">${t(locale, 'reloadMarkdown')}</button>
         </div>
+        <div id="adminError" class="notice admin-error" hidden></div>
         <section class="admin-grid">
           <div class="panel">
             <div class="panel-head">
-              <h2>👤 ${t(locale, 'users')}</h2>
-              <button class="button" data-new-user type="button">➕ ${t(locale, 'createUser')}</button>
+              <h2>${t(locale, 'users')}</h2>
+              <button class="button" data-new-user type="button">${t(locale, 'createUser')}</button>
             </div>
             <div id="usersTable" class="table-wrap"></div>
           </div>
           <div class="panel">
             <div class="panel-head">
-              <h2>🛡️ ${t(locale, 'roles')}</h2>
-              <button class="button" data-new-role type="button">➕ ${t(locale, 'createRole')}</button>
+              <h2>${t(locale, 'roles')}</h2>
+              <button class="button" data-new-role type="button">${t(locale, 'createRole')}</button>
             </div>
             <div id="rolesTable" class="table-wrap"></div>
           </div>
           <div class="panel settings-panel">
             <div class="panel-head">
-              <h2>⚙️ ${t(locale, 'designLogin')}</h2>
+              <h2>${t(locale, 'designLogin')}</h2>
             </div>
             <form id="settingsForm" class="settings-form">
               <label>${t(locale, 'portalName')} <input name="app_name" value="${escapeHtml(settings.app_name)}"></label>
@@ -587,8 +694,8 @@ function renderAdmin(user, locale) {
               <label>${t(locale, 'language')} ${renderLanguageSelect(settings.default_language, locale, 'default_language')}</label>
               <label>${t(locale, 'defaultTheme')}
                 <select name="default_theme">
-                  <option value="light" ${settings.default_theme === 'light' ? 'selected' : ''}>Bright Mode</option>
-                  <option value="dark" ${settings.default_theme === 'dark' ? 'selected' : ''}>Dark Mode</option>
+                  <option value="light" ${settings.default_theme === 'light' ? 'selected' : ''}>Light</option>
+                  <option value="dark" ${settings.default_theme === 'dark' ? 'selected' : ''}>Dark</option>
                 </select>
               </label>
               <label>${t(locale, 'themeColor')} <input name="theme_color" type="color" value="${escapeHtml(settings.theme_color)}"></label>
@@ -619,6 +726,15 @@ function renderAdmin(user, locale) {
               <label>${t(locale, 'menuLinksJson')} <textarea name="menu_links" class="code-input">${escapeHtml(settings.menu_links)}</textarea></label>
               <button class="button primary" type="submit">${t(locale, 'saveSettings')}</button>
             </form>
+          </div>
+          <div class="panel danger-panel">
+            <div class="panel-head">
+              <h2>${t(locale, 'factoryReset')}</h2>
+            </div>
+            <div class="danger-panel-body">
+              <p>${t(locale, 'factoryResetText')}</p>
+              <button class="button danger" data-factory-reset type="button">${t(locale, 'factoryResetButton')}</button>
+            </div>
           </div>
         </section>
       </main>
@@ -661,19 +777,22 @@ function renderLogin(req, user, locale) {
   return renderShell({ title: t(locale, 'login'), body, settings, locale });
 }
 
-function renderShell({ title, body, admin = false, settings = getSettings(), locale = 'de' }) {
+function renderShell({ title, body, admin = false, settings = getSettings(), locale = 'en' }) {
   const themeColor = sanitizeColor(settings.theme_color);
   const fontScale = Math.min(1.25, Math.max(0.9, Number(settings.font_scale) || 1));
+  const cssUrl = assetUrl('app.css');
+  const appJsUrl = assetUrl('app.js');
+  const adminScript = admin ? inlineScriptTag('admin.js') : '';
   return `<!doctype html>
     <html lang="${escapeHtml(locale)}">
       <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>${escapeHtml(title)} · ${escapeHtml(settings.app_name)}</title>
-        <link rel="stylesheet" href="/assets/app.css">
+        <link rel="stylesheet" href="${cssUrl}">
         <script id="portal-i18n" type="application/json">${JSON.stringify(getClientI18n(locale)).replace(/</g, '\\u003c')}</script>
-        <script defer src="/assets/app.js"></script>
-        ${admin ? '<script defer src="/assets/admin.js"></script>' : ''}
+        <script defer src="${appJsUrl}"></script>
+        ${adminScript}
       </head>
       <body data-default-theme="${escapeHtml(settings.default_theme)}" style="--primary: ${themeColor}; --font-scale: ${fontScale};">${body}</body>
     </html>`;
@@ -684,9 +803,10 @@ function renderFooter(settings) {
   const holder = settings.copyright_holder || settings.app_name;
   return `
     <footer class="site-footer">
-      <span>${escapeHtml(settings.footer_text)}</span>
-      <span>Version ${escapeHtml(PACKAGE_JSON.version)}</span>
+      <!-- <span>${escapeHtml(settings.footer_text)}</span> -->
       <span>© ${year} ${escapeHtml(holder)}</span>
+      <span>Version ${escapeHtml(PACKAGE_JSON.version)}</span>
+      <a href="https://atlas.example.com" target="_blank" rel="noopener noreferrer">Made with ♥️ by Atlas</a>
     </footer>
   `;
 }
@@ -762,8 +882,8 @@ async function handleEntraCallback(req, res, url) {
   let local = db.prepare('SELECT * FROM users WHERE lower(email) = ?').get(email);
   if (!local) {
     const info = db.prepare('INSERT INTO users (email, name, provider, password_hash) VALUES (?, ?, ?, NULL)').run(email, claims.name || email, 'entra');
-    const employeeRole = db.prepare('SELECT id FROM roles WHERE name = ?').get('employee');
-    if (employeeRole) db.prepare('INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)').run(info.lastInsertRowid, employeeRole.id);
+    const usersRole = db.prepare('SELECT id FROM roles WHERE name = ?').get('Users');
+    if (usersRole) db.prepare('INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)').run(info.lastInsertRowid, usersRole.id);
     local = db.prepare('SELECT * FROM users WHERE id = ?').get(info.lastInsertRowid);
   }
   createSession(res, local.id);
@@ -774,7 +894,7 @@ async function handleUpsertUser(req, res) {
   const payload = await readJson(req);
   const email = String(payload.email || '').trim().toLowerCase();
   const name = String(payload.name || '').trim();
-  if (!email || !name) return sendJson(res, 400, { error: 'E-Mail und Name sind Pflichtfelder.' });
+  if (!email || !name) return sendJson(res, 400, { error: 'Email and name are required.' });
   const isAdmin = payload.is_admin ? 1 : 0;
   const active = payload.active === false ? 0 : 1;
   let userId = Number(payload.id || 0);
@@ -786,13 +906,13 @@ async function handleUpsertUser(req, res) {
     const info = db.prepare('INSERT INTO users (email, name, password_hash, is_admin, active) VALUES (?, ?, ?, ?, ?)').run(email, name, hashPassword(String(payload.password || randomBytes(18).toString('base64url'))), isAdmin, active);
     userId = Number(info.lastInsertRowid);
   }
-  setUserRoles(userId, Array.isArray(payload.roles) ? payload.roles : []);
+  setUserRoles(userId, normalizeUserRoles(Array.isArray(payload.roles) ? payload.roles : [], Boolean(isAdmin)));
   sendJson(res, 200, { ok: true, user: listUsers().find((item) => item.id === userId) });
 }
 
 function handleDeleteUser(res, pathname) {
   const id = Number(pathname.split('/').pop());
-  if (!id) return sendJson(res, 400, { error: 'Ungueltige Nutzer-ID.' });
+  if (!id) return sendJson(res, 400, { error: 'Invalid user ID.' });
   db.prepare('DELETE FROM users WHERE id = ?').run(id);
   sendJson(res, 200, { ok: true });
 }
@@ -803,10 +923,10 @@ async function handleUpsertRole(req, res) {
   const name = String(payload.name || '').trim();
   const description = String(payload.description || '').trim();
   const color = sanitizeColor(payload.color || '#5d6b82');
-  if (!name) return sendJson(res, 400, { error: 'Rollenname ist erforderlich.' });
+  if (!name) return sendJson(res, 400, { error: 'Role name is required.' });
   if (id) {
     const duplicate = db.prepare('SELECT id FROM roles WHERE name = ? AND id != ?').get(name, id);
-    if (duplicate) return sendJson(res, 409, { error: 'Diese Rolle existiert bereits.' });
+    if (duplicate) return sendJson(res, 409, { error: 'This role already exists.' });
     db.prepare('UPDATE roles SET name = ?, description = ?, color = ? WHERE id = ?').run(name, description, color, id);
   } else {
     db.prepare('INSERT INTO roles (name, description, color) VALUES (?, ?, ?) ON CONFLICT(name) DO UPDATE SET description = excluded.description, color = excluded.color').run(name, description, color);
@@ -816,9 +936,21 @@ async function handleUpsertRole(req, res) {
 
 function handleDeleteRole(res, pathname) {
   const id = Number(pathname.split('/').pop());
-  if (!id) return sendJson(res, 400, { error: 'Ungueltige Rollen-ID.' });
+  if (!id) return sendJson(res, 400, { error: 'Invalid role ID.' });
   db.prepare('DELETE FROM user_roles WHERE role_id = ?').run(id);
   db.prepare('DELETE FROM roles WHERE id = ?').run(id);
+  sendJson(res, 200, { ok: true });
+}
+
+async function handleFactoryReset(req, res) {
+  const payload = await readJson(req);
+  if (String(payload.confirmation || '').trim() !== 'RESET ATLAS') {
+    return sendJson(res, 400, { error: 'Type RESET ATLAS to confirm the factory reset.' });
+  }
+
+  resetDatabaseToFactoryDefaults();
+  catalog = loadCatalog();
+  clearSessionCookie(res);
   sendJson(res, 200, { ok: true });
 }
 
@@ -963,10 +1095,10 @@ function normalizeMenuLinks(value) {
 
 function loadLocales() {
   const fallback = {
-    de: {
-      code: 'de',
-      flag: 'DE',
-      nativeName: 'Deutsch',
+    en: {
+      code: 'en',
+      flag: 'EN',
+      nativeName: 'English',
       ui: {}
     }
   };
@@ -1015,7 +1147,7 @@ function resolveLocale(req, user, settings) {
 
 function t(locale, key) {
   const active = LOCALES[locale]?.ui || {};
-  const fallback = LOCALES[DEFAULT_SETTINGS.default_language]?.ui || LOCALES.de?.ui || {};
+  const fallback = LOCALES[DEFAULT_SETTINGS.default_language]?.ui || LOCALES.en?.ui || {};
   return active[key] || fallback[key] || key;
 }
 
@@ -1028,7 +1160,7 @@ function getClientI18n(locale) {
       nativeName: item.nativeName
     })),
     messages: {
-      ...(LOCALES[DEFAULT_SETTINGS.default_language]?.ui || LOCALES.de?.ui || {}),
+      ...(LOCALES[DEFAULT_SETTINGS.default_language]?.ui || LOCALES.en?.ui || {}),
       ...(LOCALES[locale]?.ui || {})
     }
   };
@@ -1082,7 +1214,7 @@ function findBreadcrumbs(items, activeSlug, trail = []) {
     const categoryPolicy = item.slug ? catalog.bySlug.get(item.slug) : null;
     const nextTrail = categoryPolicy
       ? [...trail, { label: item.label || categoryPolicy.title, href: `/policy/${encodeURIComponent(categoryPolicy.slug)}` }]
-      : [...trail, { label: item.label || 'Kategorie', href: '#' }];
+      : [...trail, { label: item.label || 'Category', href: '#' }];
     if (item.slug === activeSlug) return nextTrail;
     const found = findBreadcrumbs(item.items || [], activeSlug, nextTrail);
     if (found.length) return found;
@@ -1096,6 +1228,13 @@ function setUserRoles(userId, roleNames) {
     const role = db.prepare('SELECT id FROM roles WHERE name = ?').get(roleName);
     if (role) db.prepare('INSERT OR IGNORE INTO user_roles (user_id, role_id) VALUES (?, ?)').run(userId, role.id);
   }
+}
+
+function normalizeUserRoles(roleNames, isAdmin) {
+  const names = Array.from(new Set(roleNames.map(String).map((item) => item.trim()).filter(Boolean)));
+  if (isAdmin && !names.includes('Admins')) names.push('Admins');
+  if (!isAdmin && names.length === 0) names.push('Users');
+  return names;
 }
 
 function getCurrentUser(req) {
@@ -1133,7 +1272,7 @@ function canReadPolicy(user, policy) {
 }
 
 function requireAdmin(user, res, callback) {
-  if (!user?.is_admin) return sendJson(res, 403, { error: 'Adminrechte erforderlich.' });
+  if (!user?.is_admin) return sendJson(res, 403, { error: 'Admin permissions required.' });
   return callback();
 }
 
@@ -1155,6 +1294,10 @@ function createSession(res, userId) {
   const expiresAt = Date.now() + 1000 * 60 * 60 * 12;
   db.prepare('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)').run(hashToken(token), userId, expiresAt);
   res.setHeader('Set-Cookie', `${COOKIE_NAME}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=43200`);
+}
+
+function clearSessionCookie(res) {
+  res.setHeader('Set-Cookie', `${COOKIE_NAME}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
 }
 
 function hashToken(token) {
@@ -1181,7 +1324,11 @@ function serveAsset(res, pathname) {
   const file = normalize(join(PUBLIC_DIR, rel));
   if (!file.startsWith(PUBLIC_DIR) || !existsSync(file)) return sendText(res, 404, 'Not found');
   const type = extname(file) === '.css' ? 'text/css' : 'text/javascript';
-  res.writeHead(200, { 'content-type': `${type}; charset=utf-8` });
+  res.writeHead(200, {
+    'content-type': `${type}; charset=utf-8`,
+    'cache-control': 'no-store, max-age=0',
+    pragma: 'no-cache'
+  });
   res.end(readFileSync(file));
 }
 
@@ -1238,6 +1385,21 @@ function ensureColumn(table, column, definition) {
 
 function stripHtml(value = '') {
   return String(value).replace(/<[^>]*>/g, '');
+}
+
+function assetUrl(file) {
+  const assetPath = join(PUBLIC_DIR, file);
+  const version = existsSync(assetPath) ? statSync(assetPath).mtimeMs.toString(36) : PACKAGE_JSON.version;
+  return `/assets/${file}?v=${encodeURIComponent(version)}`;
+}
+
+function inlineScriptTag(file) {
+  const assetPath = join(PUBLIC_DIR, file);
+  if (!existsSync(assetPath)) return '';
+  const script = readFileSync(assetPath, 'utf8')
+    .replace(/<\/script/gi, '<\\/script')
+    .replace(/<!--/g, '<\\!--');
+  return `<script>${script}</script>`;
 }
 
 function slugify(value) {

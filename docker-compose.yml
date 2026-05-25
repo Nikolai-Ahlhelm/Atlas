@@ -1,5 +1,5 @@
 services:
-  dokumentenportal:
+  atlas:
     build: .
     ports:
       - "3000:3000"
@@ -9,8 +9,8 @@ services:
       PORT: 3000
       DATA_DIR: /app/data
     volumes:
-      - portal-data:/app/data
+      - atlas-data:/app/data
     restart: unless-stopped
 
 volumes:
-  portal-data:
+  atlas-data:
