@@ -137,8 +137,10 @@ _________________
 
 # 📒 Changelog
 
+## Version 0.2.0 
+- Major design overhaul 
 
-## Version 0.1.1
+## Version 0.1.1 
 - New: Logo
 - New: Reset option
 - New: Multilanguage support

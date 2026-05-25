@@ -19,6 +19,13 @@ const HOST = process.env.HOST || '127.0.0.1';
 const COOKIE_NAME = 'atlas_session';
 const PACKAGE_JSON = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
 const LOCALES = loadLocales();
+const FONT_FAMILIES = {
+  manrope: '"Manrope", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif',
+  jakarta: '"Plus Jakarta Sans", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif',
+  inter: '"Inter", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif',
+  plex: '"IBM Plex Sans", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif',
+  serif: '"Source Serif 4", Georgia, serif'
+};
 
 const DEFAULT_ROLES = [
   ['Admins', 'Full administration access for Atlas.', '#b45309'],
@@ -34,6 +41,7 @@ const DEFAULT_SETTINGS = {
   default_theme: 'light',
   theme_color: '#2368c4',
   font_scale: '1',
+  font_family: 'manrope',
   login_eyebrow: 'Atlas',
   login_title: 'Documentation your team can shape in minutes.',
   login_text: 'Atlas turns Markdown folders into a secure, searchable workspace with role-based access and a built-in admin area.',
@@ -56,6 +64,7 @@ const LEGACY_SETTING_MIGRATIONS = {
   sidebar_title: { from: 'Dokumente', to: DEFAULT_SETTINGS.sidebar_title },
   logo_text: { from: 'DP', to: DEFAULT_SETTINGS.logo_text },
   default_language: { from: 'de', to: DEFAULT_SETTINGS.default_language },
+  font_family: { from: 'inter', to: DEFAULT_SETTINGS.font_family },
   login_eyebrow: { from: 'Dokumentenportal', to: DEFAULT_SETTINGS.login_eyebrow },
   login_title: { from: ['Richtlinien zentral, sicher und schnell auffindbar.', 'Dokumente zentral, sicher und schnell auffindbar.'], to: DEFAULT_SETTINGS.login_title },
   login_text: { from: ['Markdown-basierte Inhalte, rollenbasierter Zugriff und ein Adminbereich fuer Benutzerverwaltung.', 'Markdown-basierte Inhalte, rollenbasierter Zugriff und ein umfangreicher Adminbereich.'], to: DEFAULT_SETTINGS.login_text },
@@ -109,6 +118,27 @@ function writeLog(level, message, details) {
     return;
   }
   console.log(`${prefix} ${message}`, details);
+}
+
+function renderFontFamilySelect(selected, name = 'font_family') {
+  const current = normalizeFontFamily(selected);
+  const options = [
+    ['manrope', 'Manrope'],
+    ['jakarta', 'Plus Jakarta Sans'],
+    ['inter', 'Inter'],
+    ['plex', 'IBM Plex Sans'],
+    ['serif', 'Source Serif 4']
+  ];
+  return `
+    <select name="${escapeAttribute(name)}" class="font-family-select">
+      ${options.map(([value, label]) => `<option value="${value}" ${value === current ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('')}
+    </select>
+  `;
+}
+
+function normalizeFontFamily(value) {
+  const key = String(value || '').trim().toLowerCase();
+  return FONT_FAMILIES[key] ? key : DEFAULT_SETTINGS.font_family;
 }
 
 function logInfo(message, details) {
@@ -750,7 +780,7 @@ function renderPolicy(policy, locale) {
       ${renderBreadcrumbs(breadcrumbs, policy)}
       <div class="policy-header">
         <div>
-          <p class="eyebrow">${escapeHtml(policy.owner || 'Atlas')}</p>
+          <!--<p class="eyebrow">${escapeHtml(policy.owner || 'Atlas')}</p>-->
           <h1>${escapeHtml(policy.title)}</h1>
           <p>${escapeHtml(policy.description)}</p>
         </div>
@@ -838,6 +868,7 @@ function renderAdmin(user, locale) {
               <label>${t(locale, 'logoText')} <input name="logo_text" maxlength="6" value="${escapeHtml(settings.logo_text)}"></label>
               <label>${t(locale, 'logoUpload')} <input name="logo_upload" type="file" accept="image/*"><input name="logo_image" type="hidden" value="${escapeHtml(settings.logo_image)}"></label>
               <label>${t(locale, 'language')} ${renderLanguageSelect(settings.default_language, locale, 'default_language')}</label>
+              <label>${t(locale, 'fontFamily')} ${renderFontFamilySelect(settings.font_family, 'font_family')}</label>
               <label>${t(locale, 'defaultTheme')}
                 <select name="default_theme">
                   <option value="light" ${settings.default_theme === 'light' ? 'selected' : ''}>Light</option>
@@ -857,12 +888,14 @@ function renderAdmin(user, locale) {
                 </select>
               </label>
               <label>${t(locale, 'backgroundImageUrl')} <input name="login_background_image" placeholder="https://..." value="${escapeHtml(settings.login_background_image)}"></label>
-              <label>${t(locale, 'entraId')}
-                <select name="entra_enabled">
-                  <option value="false" ${settings.entra_enabled !== 'true' ? 'selected' : ''}>${t(locale, 'disabled')}</option>
-                  <option value="true" ${settings.entra_enabled === 'true' ? 'selected' : ''}>${t(locale, 'enabled')}</option>
-                </select>
-              </label>
+              <div class="switch-field">
+                <span>${t(locale, 'entraId')}</span>
+                <label class="switch">
+                  <input name="entra_enabled" type="checkbox" value="true" ${settings.entra_enabled === 'true' ? 'checked' : ''}>
+                  <span class="switch-track"></span>
+                  <span class="switch-label">${settings.entra_enabled === 'true' ? t(locale, 'enabled') : t(locale, 'disabled')}</span>
+                </label>
+              </div>
               <label>Entra Tenant ID <input name="entra_tenant_id" value="${escapeHtml(settings.entra_tenant_id)}"></label>
               <label>Entra Client ID <input name="entra_client_id" value="${escapeHtml(settings.entra_client_id)}"></label>
               <label>Entra Client Secret <input name="entra_client_secret" type="password" value="${escapeHtml(settings.entra_client_secret)}"></label>
@@ -926,6 +959,7 @@ function renderLogin(req, user, locale) {
 function renderShell({ title, body, admin = false, settings = getSettings(), locale = 'en' }) {
   const themeColor = sanitizeColor(settings.theme_color);
   const fontScale = Math.min(1.25, Math.max(0.9, Number(settings.font_scale) || 1));
+  const fontFamily = FONT_FAMILIES[normalizeFontFamily(settings.font_family)];
   const cssUrl = assetUrl('app.css');
   const appJsUrl = assetUrl('app.js');
   const adminScript = admin ? inlineScriptTag('admin.js') : '';
@@ -940,7 +974,7 @@ function renderShell({ title, body, admin = false, settings = getSettings(), loc
         <script defer src="${appJsUrl}"></script>
         ${adminScript}
       </head>
-      <body data-default-theme="${escapeHtml(settings.default_theme)}" style="--primary: ${themeColor}; --font-scale: ${fontScale};">${body}</body>
+      <body data-default-theme="${escapeHtml(settings.default_theme)}" style="--primary: ${themeColor}; --font-scale: ${fontScale}; --app-font: ${escapeHtml(fontFamily)};">${body}</body>
     </html>`;
 }
 
@@ -1152,6 +1186,7 @@ async function handleUpdateSettings(req, res) {
     default_theme: payload.default_theme === 'dark' ? 'dark' : 'light',
     theme_color: sanitizeColor(payload.theme_color || DEFAULT_SETTINGS.theme_color),
     font_scale: String(Math.min(1.25, Math.max(0.9, Number(payload.font_scale) || 1))),
+    font_family: normalizeFontFamily(payload.font_family),
     login_eyebrow: String(payload.login_eyebrow || ''),
     login_title: String(payload.login_title || ''),
     login_text: String(payload.login_text || ''),
@@ -1208,6 +1243,7 @@ function getSettings() {
   for (const row of rows) settings[row.key] = row.value;
   settings.theme_color = sanitizeColor(settings.theme_color);
   settings.font_scale = String(Math.min(1.25, Math.max(0.9, Number(settings.font_scale) || 1)));
+  settings.font_family = normalizeFontFamily(settings.font_family);
   settings.logo_image = sanitizeDataImage(settings.logo_image);
   settings.default_language = isSupportedLocale(settings.default_language) ? settings.default_language : DEFAULT_SETTINGS.default_language;
   settings.default_theme = settings.default_theme === 'dark' ? 'dark' : 'light';

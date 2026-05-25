@@ -25,12 +25,14 @@
     document.querySelector('input[name="font_scale"]')?.addEventListener('input', (event) => {
       document.querySelector('[data-font-preview]').textContent = `${Math.round(Number(event.target.value) * 100)}%`;
     });
+    document.querySelector('input[name="entra_enabled"]')?.addEventListener('change', syncSwitchLabels);
     document.querySelector('input[name="logo_upload"]')?.addEventListener('change', handleLogoUpload);
     document.querySelector('[data-reload-content]')?.addEventListener('click', async () => {
       await fetch('/api/admin/reload', { method: 'POST' });
       location.reload();
     });
     document.querySelector('[data-factory-reset]')?.addEventListener('click', openFactoryResetDialog);
+    syncSwitchLabels();
     await refresh();
   }
 
@@ -122,11 +124,26 @@
     const dialog = modal(`
       <form class="modal-form">
         <h2>${user.id ? msg('editUser', 'Edit user') : msg('createUser', 'Create user')}</h2>
-        <label>${msg('name', 'Name')} <input name="name" required value="${esc(user.name || '')}"></label>
-        <label>${msg('email', 'Email')} <input name="email" type="email" required value="${esc(user.email || '')}"></label>
-        <label>${msg('password', 'Password')} <input name="password" type="password" placeholder="${user.id ? msg('leaveEmptyUnchanged', 'Leave empty to keep unchanged') : ''}"></label>
-        <div class="check-row"><label><input name="is_admin" type="checkbox" ${user.is_admin ? 'checked' : ''}> Admin</label><label><input name="active" type="checkbox" ${user.active !== false ? 'checked' : ''}> ${msg('active', 'Active')}</label></div>
-        <fieldset><legend>${msg('roles', 'Roles')}</legend>${roles.map((role) => `<label class="check"><input name="roles" type="checkbox" value="${esc(role.name)}" ${(user.roles || []).includes(role.name) ? 'checked' : ''}> ${esc(role.name)}</label>`).join('')}</fieldset>
+      <label>${msg('name', 'Name')} <input name="name" required value="${esc(user.name || '')}"></label>
+      <label>${msg('email', 'Email')} <input name="email" type="email" required value="${esc(user.email || '')}"></label>
+      <label>${msg('password', 'Password')} <input name="password" type="password" placeholder="${user.id ? msg('leaveEmptyUnchanged', 'Leave empty to keep unchanged') : ''}"></label>
+      <div class="switch-row">
+        <label class="switch-card">
+          <span>Admin</span>
+          <span class="switch">
+            <input name="is_admin" type="checkbox" ${user.is_admin ? 'checked' : ''}>
+            <span class="switch-track"></span>
+          </span>
+        </label>
+        <label class="switch-card">
+          <span>${msg('active', 'Active')}</span>
+          <span class="switch">
+            <input name="active" type="checkbox" ${user.active !== false ? 'checked' : ''}>
+            <span class="switch-track"></span>
+          </span>
+        </label>
+      </div>
+      <fieldset><legend>${msg('roles', 'Roles')}</legend>${roles.map((role) => `<label class="check"><input name="roles" type="checkbox" value="${esc(role.name)}" ${(user.roles || []).includes(role.name) ? 'checked' : ''}> ${esc(role.name)}</label>`).join('')}</fieldset>
         <div class="modal-actions"><button class="button" type="button" data-close>${msg('cancel', 'Cancel')}</button><button class="button primary" type="submit">${msg('save', 'Save')}</button></div>
       </form>
     `);
@@ -218,6 +235,7 @@
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const payload = Object.fromEntries(form.entries());
+    payload.entra_enabled = form.get('entra_enabled') === 'true' ? 'true' : 'false';
     try {
       JSON.parse(payload.menu_links || '[]');
     } catch {
@@ -240,7 +258,7 @@
     const file = event.target.files?.[0];
     if (!file) return;
     if (file.size > 4_000_000) {
-      alert(msg('logoTooLarge', 'Please use a logo below 1 MB.'));
+      alert(msg('logoTooLarge', 'Please use a logo below 4 MB.'));
       event.target.value = '';
       return;
     }
@@ -283,6 +301,15 @@
     if (!adminErrorBox) return;
     adminErrorBox.hidden = true;
     adminErrorBox.innerHTML = '';
+  }
+
+  function syncSwitchLabels() {
+    document.querySelectorAll('.switch input').forEach((input) => {
+      const card = input.closest('.switch-field, .switch-card');
+      const label = card?.querySelector('.switch-label');
+      if (!label) return;
+      label.textContent = input.checked ? msg('enabled', 'Enabled') : msg('disabled', 'Disabled');
+    });
   }
 
   async function fetchJson(url, options) {

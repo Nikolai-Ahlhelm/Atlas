@@ -126,11 +126,12 @@ function initNetworkBackground() {
   const canvas = document.querySelector('[data-network-bg]');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
-  const points = Array.from({ length: 54 }, () => ({
+  const points = Array.from({ length: 42 }, () => ({
     x: Math.random(),
     y: Math.random(),
     vx: (Math.random() - 0.5) * 0.00045,
-    vy: (Math.random() - 0.5) * 0.00045
+    vy: (Math.random() - 0.5) * 0.00045,
+    size: 1.8 + Math.random() * 2.4
   }));
 
   const resize = () => {
@@ -143,9 +144,6 @@ function initNetworkBackground() {
     const width = canvas.width;
     const height = canvas.height;
     ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = 'rgba(255,255,255,0.82)';
-    ctx.strokeStyle = 'rgba(255,255,255,0.28)';
-    ctx.lineWidth = 1 * devicePixelRatio;
 
     for (const point of points) {
       point.x += point.vx;
@@ -154,6 +152,7 @@ function initNetworkBackground() {
       if (point.y < 0 || point.y > 1) point.vy *= -1;
     }
 
+    ctx.lineWidth = 1 * devicePixelRatio;
     for (let i = 0; i < points.length; i += 1) {
       for (let j = i + 1; j < points.length; j += 1) {
         const a = points[i];
@@ -161,20 +160,24 @@ function initNetworkBackground() {
         const dx = (a.x - b.x) * width;
         const dy = (a.y - b.y) * height;
         const distance = Math.sqrt(dx * dx + dy * dy);
-        if (distance < 170 * devicePixelRatio) {
-          ctx.globalAlpha = 1 - distance / (170 * devicePixelRatio);
-          ctx.beginPath();
-          ctx.moveTo(a.x * width, a.y * height);
-          ctx.lineTo(b.x * width, b.y * height);
-          ctx.stroke();
-        }
+        const maxDistance = 145 * devicePixelRatio;
+        if (distance >= maxDistance) continue;
+        const alpha = (1 - distance / maxDistance) * 0.22;
+        ctx.strokeStyle = `rgba(182, 221, 255, ${alpha})`;
+        ctx.beginPath();
+        ctx.moveTo(a.x * width, a.y * height);
+        ctx.lineTo(b.x * width, b.y * height);
+        ctx.stroke();
       }
     }
 
-    ctx.globalAlpha = 1;
     for (const point of points) {
+      const x = point.x * width;
+      const y = point.y * height;
+      const radius = point.size * devicePixelRatio;
+      ctx.fillStyle = 'rgba(232, 243, 255, 0.92)';
       ctx.beginPath();
-      ctx.arc(point.x * width, point.y * height, 2.4 * devicePixelRatio, 0, Math.PI * 2);
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
       ctx.fill();
     }
 
