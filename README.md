@@ -75,3 +75,31 @@ The admin portal can manage users, roles, branding, login copy, themes, menu lin
 ## Database behavior
 
 If `data.sqlite` is deleted and the app is started again, Atlas recreates the database automatically and seeds it with the default Admin account, roles, and settings.
+
+
+<br>
+
+_________________
+
+
+<br>
+
+# 📒 Changelog
+
+
+## Version 0.1.1
+- New: Logo
+- New: Reset option
+- New: Multilanguage support
+- Change: Setup / Initial pages redesigned to function as a guide for Atlas
+- Change: Improved visual style of sidebar
+- Change: Iprooved breadcrumb bar
+- Change: Polished UI design/style
+- Fix: Create User/Role not working
+- Fix: Incorrect display of theme mode switch
+
+## Version 0.1.0 - Initial Release
+
+
+
+
