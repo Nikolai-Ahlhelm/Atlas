@@ -8,6 +8,7 @@ document.addEventListener('click', (event) => {
   const closer = event.target.closest('[data-sidebar-close]');
   const toggle = event.target.closest('[data-toggle-section]');
   const themeToggle = event.target.closest('[data-theme-toggle]');
+  const copyCode = event.target.closest('[data-copy-code]');
   const profileOpen = event.target.closest('[data-profile-open]');
   const profileClose = event.target.closest('[data-profile-close]');
   const passwordOpen = event.target.closest('[data-password-open]');
@@ -23,6 +24,7 @@ document.addEventListener('click', (event) => {
     document.documentElement.dataset.theme = next;
     localStorage.setItem('atlas-theme', next);
   }
+  if (copyCode) copyCodeToClipboard(copyCode);
   if (profileOpen && profile) profile.hidden = !profile.hidden;
   if (profileClose && profile) profile.hidden = true;
   if (passwordOpen && passwordModal) {
@@ -34,6 +36,26 @@ document.addEventListener('click', (event) => {
     profile.hidden = true;
   }
 });
+
+async function copyCodeToClipboard(button) {
+  const wrapper = button.closest('.code-block-wrap');
+  const code = wrapper?.querySelector('code');
+  if (!code) return;
+  const defaultLabel = button.dataset.copyDefault || 'Copy';
+  const successLabel = button.dataset.copySuccess || 'Copied';
+  try {
+    await navigator.clipboard.writeText(code.textContent || '');
+    button.textContent = successLabel;
+    setTimeout(() => {
+      button.textContent = defaultLabel;
+    }, 1400);
+  } catch {
+    button.textContent = 'Failed';
+    setTimeout(() => {
+      button.textContent = defaultLabel;
+    }, 1400);
+  }
+}
 
 document.querySelector('[data-profile-form]')?.addEventListener('submit', async (event) => {
   event.preventDefault();

@@ -66,7 +66,9 @@ const LEGACY_SETTING_MIGRATIONS = {
   }
 };
 
-if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
+if (!existsSync(DATA_DIR)) {
+  mkdirSync(DATA_DIR, { recursive: true });
+}
 
 const db = new DatabaseSync(DB_PATH);
 initializeDatabase();
@@ -74,7 +76,7 @@ initializeDatabase();
 let catalog = loadCatalog();
 
 if (process.argv.includes('--check')) {
-  console.log(`OK: loaded ${catalog.policies.length} documents.`);
+  logInfo(`Catalog check completed: loaded ${catalog.policies.length} documents.`);
   process.exit(0);
 }
 
@@ -82,14 +84,49 @@ const server = createServer(async (req, res) => {
   try {
     await route(req, res);
   } catch (error) {
-    console.error(error);
+    logError('Unhandled server error', error);
     sendHtml(res, 500, renderShell({ title: 'Error', body: errorPage('An unexpected error occurred.') }));
   }
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`🚀 Atlas is running: http://${HOST}:${PORT}`);
+  logInfo(`Atlas is running at http://${HOST}:${PORT}`);
 });
+
+function timestamp() {
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2, '0');
+  const mm = String(now.getMinutes()).padStart(2, '0');
+  const ss = String(now.getSeconds()).padStart(2, '0');
+  const ms = String(now.getMilliseconds()).padStart(3, '0');
+  return `${hh}:${mm}:${ss}.${ms}`;
+}
+
+function writeLog(level, message, details) {
+  const prefix = `[${timestamp()}] [${level}]`;
+  if (details === undefined) {
+    console.log(`${prefix} ${message}`);
+    return;
+  }
+  console.log(`${prefix} ${message}`, details);
+}
+
+function logInfo(message, details) {
+  writeLog('INFO', message, details);
+}
+
+function logWarn(message, details) {
+  writeLog('WARN', message, details);
+}
+
+function logError(message, details) {
+  const prefix = `[${timestamp()}] [ERROR]`;
+  if (details === undefined) {
+    console.error(`${prefix} ${message}`);
+    return;
+  }
+  console.error(`${prefix} ${message}`, details);
+}
 
 async function route(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
@@ -119,7 +156,9 @@ async function route(req, res) {
   if (url.pathname === '/api/admin/settings' && req.method === 'POST') return requireAdmin(user, res, () => handleUpdateSettings(req, res));
   if (url.pathname === '/api/admin/reset' && req.method === 'POST') return requireAdmin(user, res, () => handleFactoryReset(req, res));
   if (url.pathname === '/api/admin/reload' && req.method === 'POST') return requireAdmin(user, res, () => {
+    logInfo(`Admin content reload requested by ${user.email}`);
     catalog = loadCatalog();
+    logInfo(`Admin content reload completed: ${catalog.policies.length} documents loaded`);
     sendJson(res, 200, { ok: true, policies: catalog.policies.length });
   });
 
@@ -137,6 +176,7 @@ async function route(req, res) {
 }
 
 function initializeDatabase() {
+  logInfo(`Initializing database at ${DB_PATH}`);
   db.exec(`
     PRAGMA journal_mode = WAL;
     CREATE TABLE IF NOT EXISTS users (
@@ -181,9 +221,11 @@ function initializeDatabase() {
   ensureColumn('users', 'language', 'TEXT');
 
   seedFactoryData();
+  logInfo('Database initialization completed');
 }
 
 function seedFactoryData() {
+  logInfo('Seeding factory defaults');
   for (const [name, description, color] of DEFAULT_ROLES) {
     db.prepare('INSERT OR IGNORE INTO roles (name, description, color) VALUES (?, ?, ?)').run(name, description, color);
     db.prepare('UPDATE roles SET description = ?, color = ? WHERE name = ?').run(description, color, name);
@@ -242,7 +284,7 @@ function ensureFactoryAdminUser() {
     db.prepare(`
       INSERT INTO users (email, name, password_hash, is_admin)
       VALUES (?, ?, ?, 1)
-    `).run('admin@example.com', 'Admin', hashPassword('ChangeMe123!'));
+    `).run('admin@admin.com', 'Admin', hashPassword('admin'));
   }
 }
 
@@ -269,6 +311,7 @@ function ensureDefaultRoleCoverage() {
 }
 
 function resetDatabaseToFactoryDefaults() {
+  logWarn('Resetting database to factory defaults');
   db.exec('BEGIN');
   try {
     db.exec(`
@@ -282,19 +325,23 @@ function resetDatabaseToFactoryDefaults() {
     `);
     seedFactoryData();
     db.exec('COMMIT');
+    logInfo('Database reset completed');
   } catch (error) {
     db.exec('ROLLBACK');
+    logError('Database reset failed', error);
     throw error;
   }
 }
 
 function loadCatalog() {
+  logInfo(`Loading catalog from ${DOCS_DIR}`);
   const home = existsSync(HOME_PATH) ? createPolicy(HOME_PATH, '__home', []) : null;
   if (existsSync(DOCS_DIR)) {
     const policies = [];
     const sidebar = scanDocsDirectory(DOCS_DIR, '', [], policies).items;
     const bySlug = new Map(policies.map((policy) => [policy.slug, policy]));
     if (home) bySlug.set(home.slug, home);
+    logInfo(`Catalog loaded from docs directory: ${policies.length} documents, ${sidebar.length} top-level sidebar entries`);
     return { policies, bySlug, sidebar, home };
   }
 
@@ -307,6 +354,7 @@ function loadCatalog() {
   const sidebar = existsSync(sidebarPath) ? JSON.parse(readFileSync(sidebarPath, 'utf8')) : policies.map((policy) => policy.slug);
   const bySlug = new Map(policies.map((policy) => [policy.slug, policy]));
   if (home) bySlug.set(home.slug, home);
+  logInfo(`Catalog loaded from legacy policies directory: ${policies.length} documents`);
   return { policies, bySlug, sidebar, home };
 }
 
@@ -336,7 +384,7 @@ function scanDocsDirectory(dir, relativeDir, inheritedRoles, policies) {
     if (item.isDirectory) {
       const childRelative = relativeDir ? `${relativeDir}/${item.entry}` : item.entry;
       const child = scanDocsDirectory(item.fullPath, childRelative, categoryRoles, policies);
-      if (child.items.length) items.push(child.categoryItem);
+      if (child.items.length || child.categoryItem.slug) items.push(child.categoryItem);
       continue;
     }
 
@@ -366,7 +414,7 @@ function scanDocsDirectory(dir, relativeDir, inheritedRoles, policies) {
 function createPolicy(filePath, slug, inheritedRoles) {
   const raw = readFileSync(filePath, 'utf8');
   const { meta, markdown } = parseFrontmatter(raw);
-  const rendered = markdownToHtml(markdown);
+  const rendered = markdownToHtml(markdown, slug);
   const roles = Array.isArray(meta.roles) ? meta.roles : inheritedRoles;
   return {
     slug,
@@ -418,13 +466,18 @@ function parseFrontmatter(raw) {
   return { meta, markdown };
 }
 
-function markdownToHtml(markdown) {
+function markdownToHtml(markdown, baseSlug = '') {
   const lines = markdown.split(/\r?\n/);
   let html = '';
   const headings = [];
   let inList = false;
   let inCode = false;
+  let codeLanguage = '';
+  let codeTitle = '';
+  let codeFenceMarker = '';
+  let codeFenceLength = 0;
   let code = [];
+  let codeBlockCount = 0;
 
   const closeList = () => {
     if (inList) {
@@ -433,17 +486,63 @@ function markdownToHtml(markdown) {
     }
   };
 
-  for (const line of lines) {
-    if (line.startsWith('```')) {
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const admonition = line.match(/^:::(note|tip|info|warning|danger)(?:\s+(.*))?\s*$/i);
+    if (admonition && !inCode) {
+      closeList();
+      const type = admonition[1].toLowerCase();
+      const title = admonition[2]?.trim();
+      const content = [];
+      index += 1;
+      while (index < lines.length && lines[index].trim() !== ':::') {
+        content.push(lines[index]);
+        index += 1;
+      }
+      const inner = markdownToHtml(content.join('\n'), baseSlug).html;
+      const displayTitle = title ? inlineMarkdown(title, baseSlug) : escapeHtml(type);
+      html += `<div class="admonition admonition-${type}"><div class="admonition-title">${displayTitle}</div><div class="admonition-body">${inner}</div></div>`;
+      continue;
+    }
+
+    const fence = line.match(/^(`{3,}|~{3,})(.*)$/);
+    if (fence) {
       if (inCode) {
-        html += `<pre><code>${escapeHtml(code.join('\n'))}</code></pre>`;
-        code = [];
-        inCode = false;
+        const closingMarker = fence[1][0];
+        const closingLength = fence[1].length;
+        if (closingMarker === codeFenceMarker && closingLength >= codeFenceLength) {
+          const languageClass = codeLanguage ? ` class="language-${escapeAttribute(codeLanguage)}"` : '';
+          const displayLabel = codeTitle || codeLanguage || 'code';
+          const codeId = `code-block-${slugify(baseSlug || 'doc')}-${codeBlockCount += 1}`;
+          html += `
+            <div class="code-block-wrap">
+              <div class="code-block-head">
+                <span class="code-block-label">${escapeHtml(displayLabel)}</span>
+                <button class="code-copy-button" type="button" data-copy-code aria-label="Copy code" data-copy-default="Copy" data-copy-success="Copied">Copy</button>
+              </div>
+              <pre class="code-block"><code id="${codeId}"${languageClass}>${escapeHtml(code.join('\n'))}</code></pre>
+            </div>
+          `;
+          code = [];
+          codeLanguage = '';
+          codeTitle = '';
+          codeFenceMarker = '';
+          codeFenceLength = 0;
+          inCode = false;
+          continue;
+        }
+        code.push(line);
+        continue;
       } else {
         closeList();
         inCode = true;
+        codeFenceMarker = fence[1][0];
+        codeFenceLength = fence[1].length;
+        const fenceInfo = parseFenceInfo(fence[2].trim());
+        codeLanguage = fenceInfo.language;
+        codeTitle = fenceInfo.title;
+        continue;
       }
-      continue;
     }
     if (inCode) {
       code.push(line);
@@ -462,9 +561,9 @@ function markdownToHtml(markdown) {
     if (heading) {
       closeList();
       const level = heading[1].length;
-      const text = inlineMarkdown(heading[2]);
+      const text = inlineMarkdown(heading[2], baseSlug);
       const id = slugify(stripHtml(heading[2]));
-      if (level > 1 && level <= 3) headings.push({ id, level, text: stripHtml(heading[2]) });
+      if (level >= 1 && level <= 4) headings.push({ id, level, text: stripHtml(heading[2]) });
       html += `<h${level} id="${id}">${text}</h${level}>`;
       continue;
     }
@@ -474,20 +573,67 @@ function markdownToHtml(markdown) {
         html += '<ul>';
         inList = true;
       }
-      html += `<li>${inlineMarkdown(list[1])}</li>`;
+      html += `<li>${inlineMarkdown(list[1], baseSlug)}</li>`;
       continue;
     }
     closeList();
-    html += `<p>${inlineMarkdown(line)}</p>`;
+    html += `<p>${inlineMarkdown(line, baseSlug)}</p>`;
   }
   closeList();
   return { html, headings };
 }
 
-function inlineMarkdown(text) {
+function inlineMarkdown(text, baseSlug = '') {
   return escapeHtml(text)
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, href) => {
+      const resolved = resolveMarkdownHref(href, baseSlug);
+      const external = /^(https?:|mailto:|tel:)/i.test(resolved);
+      const attrs = external ? ' target="_blank" rel="noreferrer"' : '';
+      return `<a href="${escapeAttribute(resolved)}"${attrs}>${label}</a>`;
+    })
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/`(.+?)`/g, '<code>$1</code>');
+}
+
+function parseFenceInfo(info) {
+  const raw = String(info || '').trim();
+  if (!raw) return { language: '', title: '' };
+  const titleMatch = raw.match(/title=(["'])(.*?)\1/i);
+  const language = raw.replace(/title=(["'])(.*?)\1/i, '').trim().split(/\s+/)[0]?.toLowerCase() || '';
+  return {
+    language,
+    title: titleMatch?.[2]?.trim() || ''
+  };
+}
+
+function resolveMarkdownHref(href, baseSlug) {
+  const value = String(href || '').trim();
+  if (!value) return '#';
+  if (value.startsWith('#')) return value;
+  if (/^(https?:|mailto:|tel:|\/)/i.test(value)) return value;
+
+  const normalized = value
+    .replace(/\\/g, '/')
+    .replace(/^\.\//, '')
+    .replace(/\.(md|mdx)$/i, '');
+
+  const baseParts = String(baseSlug || '').split('/').filter(Boolean);
+  if (!value.startsWith('./') && !value.startsWith('../')) {
+    return `/policy/${encodeURIComponent(normalized)}`;
+  }
+
+  const targetParts = value.split('/').filter(Boolean);
+  if (!baseParts.length) {
+    return `/policy/${encodeURIComponent(normalized)}`;
+  }
+
+  const currentDir = baseParts.slice(0, -1);
+  for (const part of targetParts) {
+    if (part === '.') continue;
+    if (part === '..') currentDir.pop();
+    else currentDir.push(part.replace(/\.(md|mdx)$/i, ''));
+  }
+  return `/policy/${encodeURIComponent(currentDir.join('/'))}`;
 }
 
 function renderApp({ user, activeSlug, policy, notice, locale }) {
@@ -818,6 +964,7 @@ async function handleLogin(req, res, locale) {
   const password = String(params.get('password') || '');
   const user = db.prepare('SELECT * FROM users WHERE lower(email) = ? AND active = 1').get(email);
   if (!user || !user.password_hash || !verifyPassword(password, user.password_hash)) {
+    logWarn(`Failed login attempt for email ${email}`);
     return sendHtml(res, 401, renderShell({
       title: t(locale, 'loginFailed'),
       body: errorPage(t(locale, 'emailPasswordWrong'), '/login', locale),
@@ -826,6 +973,7 @@ async function handleLogin(req, res, locale) {
   }
   createSession(res, user.id);
   redirect(res, '/');
+  logInfo(`User ${email} logged in successfully`);
 }
 
 function handleLogout(req, res) {
@@ -898,6 +1046,7 @@ async function handleUpsertUser(req, res) {
   const isAdmin = payload.is_admin ? 1 : 0;
   const active = payload.active === false ? 0 : 1;
   let userId = Number(payload.id || 0);
+  const isUpdate = Boolean(userId);
   if (userId) {
     const fields = [email, name, isAdmin, active, userId];
     db.prepare('UPDATE users SET email = ?, name = ?, is_admin = ?, active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(...fields);
@@ -907,6 +1056,11 @@ async function handleUpsertUser(req, res) {
     userId = Number(info.lastInsertRowid);
   }
   setUserRoles(userId, normalizeUserRoles(Array.isArray(payload.roles) ? payload.roles : [], Boolean(isAdmin)));
+  logInfo(`User ${isUpdate ? 'updated' : 'created'}: ${email}`, {
+    userId,
+    isAdmin: Boolean(isAdmin),
+    active: Boolean(active)
+  });
   sendJson(res, 200, { ok: true, user: listUsers().find((item) => item.id === userId) });
 }
 
@@ -931,6 +1085,7 @@ async function handleUpsertRole(req, res) {
   } else {
     db.prepare('INSERT INTO roles (name, description, color) VALUES (?, ?, ?) ON CONFLICT(name) DO UPDATE SET description = excluded.description, color = excluded.color').run(name, description, color);
   }
+  logInfo(`Role saved: ${name}`, { roleId: id || 'new', color });
   sendJson(res, 200, { ok: true, roles: listRoles() });
 }
 
@@ -945,11 +1100,14 @@ function handleDeleteRole(res, pathname) {
 async function handleFactoryReset(req, res) {
   const payload = await readJson(req);
   if (String(payload.confirmation || '').trim() !== 'RESET ATLAS') {
+    logWarn('Factory reset rejected because confirmation text did not match');
     return sendJson(res, 400, { error: 'Type RESET ATLAS to confirm the factory reset.' });
   }
 
+  logWarn('Factory reset confirmed by admin');
   resetDatabaseToFactoryDefaults();
   catalog = loadCatalog();
+  logInfo(`Factory reset reloaded catalog with ${catalog.policies.length} documents`);
   clearSessionCookie(res);
   sendJson(res, 200, { ok: true });
 }
@@ -1009,9 +1167,18 @@ async function handleUpdateSettings(req, res) {
     menu_links: normalizeMenuLinks(payload.menu_links)
   };
 
+  logInfo('Applying settings update', {
+    app_name: settings.app_name,
+    sidebar_title: settings.sidebar_title,
+    default_theme: settings.default_theme,
+    default_language: settings.default_language,
+    login_background_mode: settings.login_background_mode
+  });
+
   for (const [key, value] of Object.entries(settings)) {
     db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
   }
+  logInfo('Settings update persisted successfully');
   sendJson(res, 200, { ok: true, settings: getSettings() });
 }
 
