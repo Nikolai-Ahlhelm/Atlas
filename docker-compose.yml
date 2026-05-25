@@ -1,0 +1,16 @@
+services:
+  dokumentenportal:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3000
+      DATA_DIR: /app/data
+    volumes:
+      - portal-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  portal-data:

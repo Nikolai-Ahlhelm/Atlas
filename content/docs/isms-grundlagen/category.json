@@ -1,0 +1,5 @@
+{
+  "label": "ISMS Grundlagen",
+  "position": 1,
+  "roles": ["isms-admin", "employee"]
+}

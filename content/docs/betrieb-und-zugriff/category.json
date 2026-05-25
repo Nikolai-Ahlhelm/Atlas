@@ -1,0 +1,5 @@
+{
+  "label": "Betrieb und Zugriff",
+  "position": 2,
+  "roles": ["isms-admin", "employee", "it"]
+}
