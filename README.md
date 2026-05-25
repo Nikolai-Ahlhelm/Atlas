@@ -62,7 +62,7 @@ Example `docker-compose.yaml` for the published GHCR image:
 ```yaml
 services:
   atlas:
-    image: ghcr.io/nikolai-ahlhelm/policy-portal:latest
+    image: ghcr.io/nikolai-ahlhelm/atlas:latest
     ports:
       - "3000:3000"
     environment:

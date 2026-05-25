@@ -88,7 +88,7 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`Atlas laeuft auf http://${HOST}:${PORT}`);
+  console.log(`🚀 Atlas is running: http://${HOST}:${PORT}`);
 });
 
 async function route(req, res) {
