@@ -57,6 +57,29 @@ Or with Docker Compose:
 docker compose up -d
 ```
 
+Example `docker-compose.yaml` for the published GHCR image:
+
+```yaml
+services:
+  atlas:
+    image: ghcr.io/nikolai-ahlhelm/policy-portal:latest
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3000
+      DATA_DIR: /app/data
+    volumes:
+      - atlas-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  atlas-data:
+```
+
+The checked-in `docker-compose.yml` in this repository is still useful for local self-builds while developing Atlas itself.
+
 The GitHub workflow publishes new images on pushes to `master`, on published releases, and on manual workflow runs.
 
 ## Content structure
