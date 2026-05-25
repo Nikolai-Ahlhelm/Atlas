@@ -1,5 +1,8 @@
 FROM node:26-bookworm-slim
 
+LABEL org.opencontainers.image.title="Atlas"
+LABEL org.opencontainers.image.source="https://github.com/Nikolai-Ahlhelm/Atlas"
+
 ENV NODE_ENV=production
 ENV HOST=0.0.0.0
 ENV PORT=3000

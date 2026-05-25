@@ -31,6 +31,34 @@ Useful environment variables:
 - `HOST`: bind address, `0.0.0.0` in Docker
 - `DATA_DIR`: SQLite storage path, default `/app/data`
 
+## Pull from GHCR
+
+The repository is prepared to publish a Docker image automatically via GitHub Actions to GitHub Container Registry.
+
+Pull the latest published image:
+
+```bash
+docker pull ghcr.io/nikolai-ahlhelm/policy-portal:latest
+```
+
+Run it with a persistent volume for SQLite:
+
+```bash
+docker run -d \
+  --name atlas \
+  -p 3000:3000 \
+  -v atlas-data:/app/data \
+  ghcr.io/nikolai-ahlhelm/policy-portal:latest
+```
+
+Or with Docker Compose:
+
+```powershell
+docker compose up -d
+```
+
+The GitHub workflow publishes new images on pushes to `master`, on published releases, and on manual workflow runs.
+
 ## Content structure
 
 The home page lives in `content/home.md`. Documentation pages live in `content/docs`, and the sidebar is generated from folders plus optional `category.json` files.
