@@ -18,7 +18,8 @@ const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '127.0.0.1';
 const COOKIE_NAME = 'atlas_session';
 const PACKAGE_JSON = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
-const LOCALES = loadLocales();
+let localesCache = null;
+let localesCacheSignature = '';
 const FONT_FAMILIES = {
   manrope: '"Manrope", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif',
   jakarta: '"Plus Jakarta Sans", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif',
@@ -1300,7 +1301,7 @@ function loadLocales() {
   const fallback = {
     en: {
       code: 'en',
-      flag: 'EN',
+      flag: 'gb',
       nativeName: 'English',
       ui: {}
     }
@@ -1313,19 +1314,48 @@ function loadLocales() {
       const parsed = JSON.parse(readFileSync(join(LOCALES_DIR, file), 'utf8'));
       const code = String(parsed.code || file.replace(/\.json$/i, '')).toLowerCase();
       if (code) locales[code] = { ...parsed, code, ui: parsed.ui || {} };
-    } catch {
-      // Invalid locale files should not prevent the portal from starting.
+    } catch (error) {
+      logWarn(`Skipping invalid locale file ${file}`, error instanceof Error ? error.message : String(error));
     }
   }
   return Object.keys(locales).length ? locales : fallback;
 }
 
+function getLocalesSignature() {
+  if (!existsSync(LOCALES_DIR)) return 'missing';
+  try {
+    return readdirSync(LOCALES_DIR)
+      .filter((name) => name.endsWith('.json'))
+      .map((name) => {
+        const filePath = join(LOCALES_DIR, name);
+        const stats = statSync(filePath);
+        return `${name}:${stats.mtimeMs}:${stats.size}`;
+      })
+      .sort()
+      .join('|');
+  } catch (error) {
+    logWarn('Failed to inspect locale directory', error instanceof Error ? error.message : String(error));
+    return 'error';
+  }
+}
+
+function getLocales() {
+  const signature = getLocalesSignature();
+  if (!localesCache || signature !== localesCacheSignature) {
+    localesCache = loadLocales();
+    localesCacheSignature = signature;
+    logInfo(`Loaded locales: ${Object.keys(localesCache).sort().join(', ')}`);
+  }
+  return localesCache;
+}
+
 function getAvailableLanguages() {
-  return Object.values(LOCALES).sort((a, b) => a.nativeName.localeCompare(b.nativeName));
+  return Object.values(getLocales()).sort((a, b) => a.nativeName.localeCompare(b.nativeName));
 }
 
 function isSupportedLocale(code) {
-  return Boolean(code && LOCALES[String(code).toLowerCase()]);
+  const locales = getLocales();
+  return Boolean(code && locales[String(code).toLowerCase()]);
 }
 
 function detectBrowserLocale(req) {
@@ -1349,12 +1379,14 @@ function resolveLocale(req, user, settings) {
 }
 
 function t(locale, key) {
-  const active = LOCALES[locale]?.ui || {};
-  const fallback = LOCALES[DEFAULT_SETTINGS.default_language]?.ui || LOCALES.en?.ui || {};
+  const locales = getLocales();
+  const active = locales[locale]?.ui || {};
+  const fallback = locales[DEFAULT_SETTINGS.default_language]?.ui || locales.en?.ui || {};
   return active[key] || fallback[key] || key;
 }
 
 function getClientI18n(locale) {
+  const locales = getLocales();
   return {
     locale,
     languages: getAvailableLanguages().map((item) => ({
@@ -1363,22 +1395,28 @@ function getClientI18n(locale) {
       nativeName: item.nativeName
     })),
     messages: {
-      ...(LOCALES[DEFAULT_SETTINGS.default_language]?.ui || LOCALES.en?.ui || {}),
-      ...(LOCALES[locale]?.ui || {})
+      ...(locales[DEFAULT_SETTINGS.default_language]?.ui || locales.en?.ui || {}),
+      ...(locales[locale]?.ui || {})
     }
   };
 }
 
 function renderLanguageSelect(selected, locale, name = 'language') {
   const current = isSupportedLocale(selected) ? String(selected).toLowerCase() : locale;
+  const languages = getAvailableLanguages();
+  const currentLanguage = languages.find((language) => language.code === current) || languages[0] || { flag: '', nativeName: '' };
+  const flagUrl = currentLanguage.flag ? `/assets/flags/4x3/${escapeAttribute(currentLanguage.flag)}.svg` : '';
   return `
-    <select name="${escapeAttribute(name)}" class="language-select">
-      ${getAvailableLanguages().map((language) => `
-        <option value="${escapeHtml(language.code)}" ${language.code === current ? 'selected' : ''}>
-          ${escapeHtml(language.flag)} ${escapeHtml(language.nativeName)}
-        </option>
-      `).join('')}
-    </select>
+    <div class="language-select-wrapper">
+      <img class="language-select-flag" src="${escapeHtml(flagUrl)}" alt="${escapeHtml(currentLanguage.nativeName)}" aria-hidden="true">
+      <select name="${escapeAttribute(name)}" class="language-select">
+        ${languages.map((language) => `
+          <option value="${escapeHtml(language.code)}" data-flag="${escapeHtml(language.flag)}" ${language.code === current ? 'selected' : ''}>
+            ${escapeHtml(language.nativeName)}
+          </option>
+        `).join('')}
+      </select>
+    </div>
   `;
 }
 
@@ -1526,9 +1564,22 @@ function serveAsset(res, pathname) {
   const rel = pathname.replace('/assets/', '');
   const file = normalize(join(PUBLIC_DIR, rel));
   if (!file.startsWith(PUBLIC_DIR) || !existsSync(file)) return sendText(res, 404, 'Not found');
-  const type = extname(file) === '.css' ? 'text/css' : 'text/javascript';
+  const extension = extname(file).toLowerCase();
+  const type = ({
+    '.css': 'text/css',
+    '.js': 'text/javascript',
+    '.svg': 'image/svg+xml',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.webp': 'image/webp',
+    '.gif': 'image/gif',
+    '.ico': 'image/x-icon',
+    '.json': 'application/json'
+  })[extension] || 'application/octet-stream';
+  const isTextLike = type.startsWith('text/') || type === 'application/json' || type === 'image/svg+xml';
   res.writeHead(200, {
-    'content-type': `${type}; charset=utf-8`,
+    'content-type': isTextLike ? `${type}; charset=utf-8` : type,
     'cache-control': 'no-store, max-age=0',
     pragma: 'no-cache'
   });

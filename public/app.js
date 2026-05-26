@@ -9,6 +9,7 @@ document.addEventListener('click', (event) => {
   const toggle = event.target.closest('[data-toggle-section]');
   const themeToggle = event.target.closest('[data-theme-toggle]');
   const copyCode = event.target.closest('[data-copy-code]');
+  const languageSelect = event.target.closest('select.language-select');
   const profileOpen = event.target.closest('[data-profile-open]');
   const profileClose = event.target.closest('[data-profile-close]');
   const passwordOpen = event.target.closest('[data-password-open]');
@@ -24,6 +25,7 @@ document.addEventListener('click', (event) => {
     document.documentElement.dataset.theme = next;
     localStorage.setItem('atlas-theme', next);
   }
+  if (languageSelect) updateLanguageFlag(languageSelect);
   if (copyCode) copyCodeToClipboard(copyCode);
   if (profileOpen && profile) profile.hidden = !profile.hidden;
   if (profileClose && profile) profile.hidden = true;
@@ -35,6 +37,11 @@ document.addEventListener('click', (event) => {
   if (profile && !profile.hidden && !event.target.closest('[data-profile-popover]') && !profileOpen) {
     profile.hidden = true;
   }
+});
+
+document.addEventListener('change', (event) => {
+  const languageSelect = event.target.closest('select.language-select');
+  if (languageSelect) updateLanguageFlag(languageSelect);
 });
 
 async function copyCodeToClipboard(button) {
@@ -55,6 +62,18 @@ async function copyCodeToClipboard(button) {
       button.textContent = defaultLabel;
     }, 1400);
   }
+}
+
+function updateLanguageFlag(select) {
+  const flagCode = select.selectedOptions?.[0]?.dataset.flag;
+  if (!flagCode) return;
+
+  const wrapper = select.closest('.language-select-wrapper');
+  const flagImage = wrapper?.querySelector('.language-select-flag');
+  if (!flagImage) return;
+
+  flagImage.src = `/assets/flags/4x3/${flagCode}.svg`;
+  flagImage.alt = select.selectedOptions?.[0]?.textContent || '';
 }
 
 document.querySelector('[data-profile-form]')?.addEventListener('submit', async (event) => {
