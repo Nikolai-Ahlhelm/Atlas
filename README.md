@@ -2,6 +2,10 @@
 
 Atlas is a lightweight documentation portal for internal knowledge, policies, and team handbooks. It renders Markdown content with role-based access, an SQLite backend, and a built-in admin area.
 
+> [!NOTE]
+> This project is built with the help of AI. (Code and translations)
+
+
 ## Start
 
 ```powershell
