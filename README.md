@@ -38,7 +38,7 @@ The repository is prepared to publish a Docker image automatically via GitHub Ac
 Pull the latest published image:
 
 ```bash
-docker pull ghcr.io/nikolai-ahlhelm/policy-portal:latest
+docker pull ghcr.io/nikolai-ahlhelm/atlas:latest
 ```
 
 Run it with a persistent volume for SQLite:
@@ -48,7 +48,7 @@ docker run -d \
   --name atlas \
   -p 3000:3000 \
   -v atlas-data:/app/data \
-  ghcr.io/nikolai-ahlhelm/policy-portal:latest
+  ghcr.io/nikolai-ahlhelm/atlas:latest
 ```
 
 Or with Docker Compose:
