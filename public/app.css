@@ -178,15 +178,86 @@ select {
   transition: transform 180ms ease, background 180ms ease, color 180ms ease;
 }
 
+.top-link-dropdown {
+  position: relative;
+}
+
+.top-link-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 750;
+  transition: transform 180ms ease, background 180ms ease, color 180ms ease;
+}
+
+.top-link-caret {
+  font-size: 12px;
+  transition: transform 180ms ease;
+}
+
+.top-link-dropdown.open .top-link-caret,
+.top-link-dropdown.active .top-link-caret {
+  transform: rotate(180deg);
+}
+
+.top-link-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  z-index: 50;
+  display: none;
+  min-width: 220px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--surface-strong) 94%, var(--theme-tint));
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: blur(22px) saturate(145%);
+}
+
+.top-link-dropdown.open .top-link-menu {
+  display: grid;
+  gap: 6px;
+}
+
+.top-link-menu-item {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 700;
+  transition: background 160ms ease, color 160ms ease, transform 180ms ease;
+}
+
 .top-links a:hover {
   background: color-mix(in srgb, var(--surface-elevated) 82%, var(--theme-tint));
   color: var(--primary-dark);
   transform: translateY(-1px);
 }
 
-.top-links a.active {
+.top-links a.active,
+.top-link-trigger.active,
+.top-link-dropdown.open .top-link-trigger,
+.top-link-menu-item:hover,
+.top-link-menu-item.active,
+.top-link-trigger:hover {
   background: color-mix(in srgb, var(--primary) 14%, var(--surface-elevated));
   color: var(--primary-dark);
+}
+
+.top-link-menu-item:hover {
+  transform: translateX(2px);
 }
 
 .workspace {
@@ -562,6 +633,112 @@ select {
 }
 
 .blog-studio-grid {
+  grid-template-columns: 320px minmax(0, 1fr);
+}
+
+.cms-page-shell {
+  width: min(100%, 1360px);
+}
+
+.cms-hero,
+.cms-full-page {
+  display: grid;
+  gap: 24px;
+}
+
+.cms-hero-media,
+.cms-card-media,
+.cms-page-cover {
+  overflow: hidden;
+  border-radius: var(--radius-xl);
+  background: color-mix(in srgb, var(--primary) 10%, var(--surface));
+  box-shadow: var(--shadow-soft);
+}
+
+.cms-hero-media img,
+.cms-card-media img,
+.cms-page-cover img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.cms-hero-media,
+.cms-page-cover {
+  max-height: 460px;
+}
+
+.cms-hero-copy,
+.cms-page-header {
+  display: grid;
+  gap: 14px;
+}
+
+.cms-hero-copy h1,
+.cms-page-header h1 {
+  margin: 0;
+  font-size: calc(clamp(34px, 5vw, 58px) * var(--font-scale));
+  line-height: 1.04;
+}
+
+.cms-hero-copy p,
+.cms-page-header p {
+  margin: 0;
+  color: var(--muted);
+  font-size: calc(18px * var(--font-scale));
+  line-height: 1.7;
+}
+
+.cms-body {
+  width: 100%;
+  max-width: none;
+}
+
+.cms-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 18px;
+}
+
+.cms-card {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xl);
+  background: color-mix(in srgb, var(--surface-elevated) 92%, var(--theme-tint));
+  box-shadow: var(--shadow-soft);
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.cms-card:hover {
+  transform: translateY(-3px);
+  border-color: color-mix(in srgb, var(--primary) 34%, var(--line));
+  box-shadow: var(--shadow);
+}
+
+.cms-card-media {
+  aspect-ratio: 16 / 10;
+}
+
+.cms-card-body {
+  display: grid;
+  gap: 10px;
+  padding: 20px;
+}
+
+.cms-card-body h2 {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.15;
+}
+
+.cms-card-body p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.cms-studio-grid {
   grid-template-columns: 320px minmax(0, 1fr);
 }
 
@@ -1726,6 +1903,7 @@ fieldset {
   .policy-header,
   .admin-grid,
   .blog-studio-grid,
+  .cms-studio-grid,
   .settings-form,
   .login-page {
     grid-template-columns: 1fr;

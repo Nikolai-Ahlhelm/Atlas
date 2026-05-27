@@ -10,6 +10,7 @@ const CONTENT_DIR = join(ROOT, 'content');
 const LOCALES_DIR = join(ROOT, 'locales');
 const DOCS_DIR = join(CONTENT_DIR, 'docs');
 const BLOG_DIR = join(CONTENT_DIR, 'blog');
+const CMS_DIR = join(CONTENT_DIR, 'cms');
 const HOME_PATH = join(CONTENT_DIR, 'home.md');
 const POLICY_DIR = join(CONTENT_DIR, 'policies');
 const PUBLIC_DIR = join(ROOT, 'public');
@@ -33,7 +34,8 @@ const FONT_FAMILIES = {
 const DEFAULT_ROLES = [
   ['Admins', 'Full administration access for Atlas.', '#b45309'],
   ['Users', 'Standard access to shared Atlas documentation.', '#2368c4'],
-  ['Blog-Editor', 'Can create and manage blog posts without full admin access.', '#0f9d92']
+  ['Blog-Editor', 'Can create and manage blog posts without full admin access.', '#0f9d92'],
+  ['CMS-Editor', 'Can create and manage CMS pages without full admin access.', '#8b5cf6']
 ];
 
 const DEFAULT_SETTINGS = {
@@ -94,6 +96,13 @@ const FEATURE_DEFINITIONS = {
     href: '/blog',
     description: 'Markdown-based news and update feed with visual cards and article hero images.',
     defaultEnabled: true
+  },
+  cms: {
+    key: 'cms',
+    label: 'Pages',
+    href: '/pages',
+    description: 'Standalone content pages with Markdown and HTML support, managed like a lightweight CMS.',
+    defaultEnabled: true
   }
 };
 
@@ -126,6 +135,7 @@ initializeDatabase();
 
 let catalog = loadCatalog();
 let blogCatalog = loadBlogCatalog();
+let cmsCatalog = loadCmsCatalog();
 
 if (process.argv.includes('--check')) {
   logInfo(`Catalog check completed: loaded ${catalog.policies.length} documents.`);
@@ -243,13 +253,18 @@ async function route(req, res) {
   if (url.pathname === '/api/blog/studio/post' && req.method === 'GET') return requireBlogEditor(user, res, () => handleGetBlogStudioPost(res, url));
   if (url.pathname === '/api/blog/studio/post' && req.method === 'POST') return requireBlogEditor(user, res, () => handleSaveBlogStudioPost(req, res, user));
   if (url.pathname.startsWith('/api/blog/studio/post/') && req.method === 'DELETE') return requireBlogEditor(user, res, () => handleDeleteBlogStudioPost(res, url.pathname));
+  if (url.pathname === '/api/cms/studio/tree' && req.method === 'GET') return requireCmsEditor(user, res, () => sendJson(res, 200, getCmsStudioTree()));
+  if (url.pathname === '/api/cms/studio/page' && req.method === 'GET') return requireCmsEditor(user, res, () => handleGetCmsStudioPage(res, url));
+  if (url.pathname === '/api/cms/studio/page' && req.method === 'POST') return requireCmsEditor(user, res, () => handleSaveCmsStudioPage(req, res, user));
+  if (url.pathname.startsWith('/api/cms/studio/page/') && req.method === 'DELETE') return requireCmsEditor(user, res, () => handleDeleteCmsStudioPage(res, url.pathname));
   if (url.pathname === '/api/admin/reset' && req.method === 'POST') return requireAdmin(user, res, () => handleFactoryReset(req, res));
   if (url.pathname === '/api/admin/reload' && req.method === 'POST') return requireAdmin(user, res, () => {
     logInfo(`Admin content reload requested by ${user.email}`);
     catalog = loadCatalog();
     blogCatalog = loadBlogCatalog();
-    logInfo(`Admin content reload completed: ${catalog.policies.length} documents and ${blogCatalog.posts.length} blog posts loaded`);
-    sendJson(res, 200, { ok: true, policies: catalog.policies.length, blogPosts: blogCatalog.posts.length });
+    cmsCatalog = loadCmsCatalog();
+    logInfo(`Admin content reload completed: ${catalog.policies.length} documents, ${blogCatalog.posts.length} blog posts and ${cmsCatalog.pages.length} CMS pages loaded`);
+    sendJson(res, 200, { ok: true, policies: catalog.policies.length, blogPosts: blogCatalog.posts.length, cmsPages: cmsCatalog.pages.length });
   });
 
   if (url.pathname === '/api/downloads/tree') return requirePlugin('download_center', res, () => sendJson(res, 200, getDownloadTreeForUser(user)));
@@ -273,6 +288,14 @@ async function route(req, res) {
     if (!canManageBlog(user)) return sendHtml(res, 403, renderBlogIndexPage({ user, locale, notice: 'Blog editor permissions are required.' }));
     return sendHtml(res, 200, renderBlogStudio(user, locale));
   }
+  if (url.pathname === '/pages') {
+    if (!isPluginEnabled('cms')) return sendHtml(res, 404, renderFeatureHub({ user, locale, notice: 'The CMS feature is currently disabled.' }));
+    return sendHtml(res, 200, renderCmsIndexPage({ user, locale }));
+  }
+  if (url.pathname === '/cms-studio') {
+    if (!canManageCms(user)) return sendHtml(res, 403, renderCmsIndexPage({ user, locale, notice: 'CMS editor permissions are required.' }));
+    return sendHtml(res, 200, renderCmsStudio(user, locale));
+  }
   if (url.pathname === '/admin') return requireAdmin(user, res, () => sendHtml(res, 200, renderAdmin(user, locale)));
   if (url.pathname.startsWith('/policy/')) {
     if (!isPluginEnabled('documentation')) return sendHtml(res, 404, renderFeatureHub({ user, locale, notice: 'The documentation feature is currently disabled.' }));
@@ -289,6 +312,14 @@ async function route(req, res) {
     if (!post) return sendHtml(res, 404, renderBlogIndexPage({ user, locale, notice: t(locale, 'notFoundPage') }));
     if (!canReadBlogPost(user, post)) return sendHtml(res, 403, renderBlogIndexPage({ user, locale, notice: t(locale, 'noPermission') }));
     return sendHtml(res, 200, renderBlogPostPage({ user, locale, post }));
+  }
+  if (url.pathname.startsWith('/page/')) {
+    if (!isPluginEnabled('cms')) return sendHtml(res, 404, renderFeatureHub({ user, locale, notice: 'The CMS feature is currently disabled.' }));
+    const slug = decodeURIComponent(url.pathname.slice('/page/'.length));
+    const page = cmsCatalog.bySlug.get(slug);
+    if (!page) return sendHtml(res, 404, renderCmsIndexPage({ user, locale, notice: t(locale, 'notFoundPage') }));
+    if (!canReadCmsPage(user, page)) return sendHtml(res, 403, renderCmsIndexPage({ user, locale, notice: t(locale, 'noPermission') }));
+    return sendHtml(res, 200, renderCmsPage({ user, locale, page }));
   }
 
   sendHtml(res, 404, renderApp({ user, activeSlug: null, notice: t(locale, 'notFoundPage'), locale }));
@@ -637,12 +668,23 @@ function markdownToHtml(markdown, baseSlug = '') {
   let codeFenceLength = 0;
   let code = [];
   let codeBlockCount = 0;
+  let inHtmlBlock = false;
+  let htmlBlockLines = [];
+  let htmlBlockTag = '';
 
   const closeList = () => {
     if (inList) {
       html += '</ul>';
       inList = false;
     }
+  };
+
+  const closeHtmlBlock = () => {
+    if (!inHtmlBlock) return;
+    html += htmlBlockLines.join('\n');
+    inHtmlBlock = false;
+    htmlBlockLines = [];
+    htmlBlockTag = '';
   };
 
   for (let index = 0; index < lines.length; index += 1) {
@@ -707,11 +749,29 @@ function markdownToHtml(markdown, baseSlug = '') {
       code.push(line);
       continue;
     }
-    if (!line.trim()) {
-      closeList();
+    if (inHtmlBlock) {
+      htmlBlockLines.push(line);
+      if (htmlBlockTag && new RegExp(`</${htmlBlockTag}>`, 'i').test(line)) {
+        closeHtmlBlock();
+      }
       continue;
     }
-    if (/^\s*<\/?[a-z][\s\S]*>\s*$/i.test(line)) {
+    if (!line.trim()) {
+      closeList();
+      closeHtmlBlock();
+      continue;
+    }
+
+    const htmlBlockStart = line.match(/^\s*<([a-z][a-z0-9-]*)(?:\s[^>]*)?>\s*$/i);
+    if (htmlBlockStart && !/\/>\s*$/i.test(line) && !new RegExp(`</${htmlBlockStart[1]}>`, 'i').test(line)) {
+      closeList();
+      inHtmlBlock = true;
+      htmlBlockTag = htmlBlockStart[1].toLowerCase();
+      htmlBlockLines = [line];
+      continue;
+    }
+
+    if (/^\s*<\/?[a-z!][\s\S]*>\s*$/i.test(line)) {
       closeList();
       html += line;
       continue;
@@ -739,11 +799,19 @@ function markdownToHtml(markdown, baseSlug = '') {
     html += `<p>${inlineMarkdown(line, baseSlug)}</p>`;
   }
   closeList();
+  closeHtmlBlock();
   return { html, headings };
 }
 
 function inlineMarkdown(text, baseSlug = '') {
-  return escapeHtml(text)
+  const rawHtml = [];
+  const withPlaceholders = String(text).replace(/<[^>\n]+>/g, (tag) => {
+    const token = `@@RAWHTML${rawHtml.length}@@`;
+    rawHtml.push(tag);
+    return token;
+  });
+
+  let rendered = escapeHtml(withPlaceholders)
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, href) => {
       const resolved = resolveMarkdownHref(href, baseSlug);
       const external = /^(https?:|mailto:|tel:)/i.test(resolved);
@@ -752,6 +820,9 @@ function inlineMarkdown(text, baseSlug = '') {
     })
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/`(.+?)`/g, '<code>$1</code>');
+
+  rendered = rendered.replace(/@@RAWHTML(\d+)@@/g, (_, index) => rawHtml[Number(index)] || '');
+  return rendered;
 }
 
 function parseFenceInfo(info) {
@@ -827,7 +898,7 @@ function renderTopbar(user, locale, currentHref = '/') {
   const pluginLinks = listPlugins()
     .filter((plugin) => plugin.enabled)
     .map((plugin) => ({ label: plugin.label, href: plugin.href, roles: [], automatic: true }));
-  const customLinks = parseMenuLinks(settings.menu_links).filter((link) => canSeeMenuLink(user, link));
+  const customLinks = filterVisibleMenuLinks(parseMenuLinks(settings.menu_links), user);
   const links = [...pluginLinks, ...customLinks.filter((link) => !pluginLinks.some((plugin) => plugin.href === link.href))];
   return `
     <header class="topbar">
@@ -836,8 +907,9 @@ function renderTopbar(user, locale, currentHref = '/') {
         <a href="/" class="brand-mark">${settings.logo_image ? `<img src="${escapeAttribute(settings.logo_image)}" alt="">` : escapeHtml(settings.logo_text)}</a>
         <a href="/" class="brand-title">${escapeHtml(settings.app_name)}</a>
       </div>
-      <nav class="top-links">${links.map((link) => `<a class="${isNavActive(currentHref, link.href) ? 'active' : ''}" href="${escapeHtml(link.href)}">${escapeHtml(link.label)}</a>`).join('')}</nav>
+      <nav class="top-links">${links.map((link) => renderTopbarLink(link, currentHref)).join('')}</nav>
       <div class="top-actions">
+        ${canManageCms(user) ? `<a class="button ghost" href="/cms-studio">${tf(locale, 'cmsStudio', 'CMS Studio')}</a>` : ''}
         ${canManageBlog(user) ? `<a class="button ghost" href="/blog-studio">${tf(locale, 'blogStudio', 'Blog Studio')}</a>` : ''}
         ${user.is_admin ? `<a class="button ghost" href="/admin">${t(locale, 'admin')}</a>` : ''}
         <button class="theme-toggle" type="button" data-theme-toggle aria-label="Toggle theme"><span></span></button>
@@ -847,6 +919,24 @@ function renderTopbar(user, locale, currentHref = '/') {
     </header>
     ${renderProfileDialog(user, locale)}
   `;
+}
+
+function renderTopbarLink(link, currentHref) {
+  if (Array.isArray(link.children) && link.children.length) {
+    const active = link.children.some((child) => isNavActive(currentHref, child.href));
+    return `
+      <div class="top-link-dropdown ${active ? 'active' : ''}" data-nav-dropdown>
+        <button class="top-link-trigger ${active ? 'active' : ''}" type="button" data-nav-dropdown-trigger aria-expanded="false">
+          <span>${escapeHtml(link.label)}</span>
+          <span class="top-link-caret">▾</span>
+        </button>
+        <div class="top-link-menu">
+          ${link.children.map((child) => `<a class="top-link-menu-item ${isNavActive(currentHref, child.href) ? 'active' : ''}" href="${escapeHtml(child.href)}">${escapeHtml(child.label)}</a>`).join('')}
+        </div>
+      </div>
+    `;
+  }
+  return `<a class="${isNavActive(currentHref, link.href) ? 'active' : ''}" href="${escapeHtml(link.href)}">${escapeHtml(link.label)}</a>`;
 }
 
 function renderSidebar(items, user, activeSlug) {
@@ -1136,6 +1226,147 @@ function renderBlogStudio(user, locale) {
   return renderShell({ title: tf(locale, 'blogStudio', 'Blog Studio'), body, settings, locale, scripts: ['blog-studio.js'] });
 }
 
+function renderCmsIndexPage({ user, locale, notice = '' }) {
+  const settings = getSettings();
+  const pages = cmsCatalog.pages.filter((page) => page.slug !== 'index' && canReadCmsPage(user, page));
+  const home = cmsCatalog.home && canReadCmsPage(user, cmsCatalog.home) ? cmsCatalog.home : null;
+  const body = `
+    <div class="app-shell">
+      ${renderTopbar(user, locale, '/pages')}
+      <main class="content cms-page-shell">
+        ${notice ? `<div class="notice">${escapeHtml(notice)}</div>` : ''}
+        ${home ? `
+          <section class="cms-hero">
+            ${home.coverImage ? `<div class="cms-hero-media"><img src="${escapeAttribute(home.coverImage)}" alt=""></div>` : ''}
+            <div class="cms-hero-copy">
+              <p class="eyebrow">${tf(locale, 'pages', 'Pages')}</p>
+              <h1>${escapeHtml(home.title)}</h1>
+              <p>${escapeHtml(home.description || home.excerpt || '')}</p>
+            </div>
+          </section>
+          <section class="cms-body markdown-body">${home.html}</section>
+        ` : `
+          <section class="policy-header cms-header">
+            <div>
+              <p class="eyebrow">${tf(locale, 'pages', 'Pages')}</p>
+              <h1>${tf(locale, 'cmsWelcome', 'Flexible content pages')}</h1>
+              <p>${tf(locale, 'cmsWelcomeText', 'Create full-width pages in Markdown with optional raw HTML sections for richer layouts and embedded content.')}</p>
+            </div>
+          </section>
+        `}
+        ${pages.length ? `<section class="cms-card-grid">${pages.map((page) => renderCmsCard(page)).join('')}</section>` : renderCmsEmptyState(locale, canManageCms(user))}
+      </main>
+      ${renderFooter(settings)}
+    </div>
+  `;
+  return renderShell({ title: tf(locale, 'pages', 'Pages'), body, settings, locale });
+}
+
+function renderCmsCard(page) {
+  return `
+    <a class="cms-card" href="/page/${encodeURIComponent(page.slug)}">
+      ${page.coverImage ? `<div class="cms-card-media"><img src="${escapeAttribute(page.coverImage)}" alt=""></div>` : ''}
+      <div class="cms-card-body">
+        <h2>${escapeHtml(page.title)}</h2>
+        <p>${escapeHtml(page.excerpt || page.description || '')}</p>
+      </div>
+    </a>
+  `;
+}
+
+function renderCmsPage({ user, locale, page }) {
+  const settings = getSettings();
+  const body = `
+    <div class="app-shell">
+      ${renderTopbar(user, locale, '/pages')}
+      <main class="content cms-page-shell">
+        <article class="cms-full-page">
+          ${page.coverImage ? `<div class="cms-hero-media cms-page-cover"><img src="${escapeAttribute(page.coverImage)}" alt=""></div>` : ''}
+          <header class="cms-page-header">
+            ${canManageCms(user) ? `<div class="policy-admin-actions"><a class="button ghost policy-admin-button" href="/cms-studio?page=${encodeURIComponent(page.slug)}">${tf(locale, 'editPage', 'Edit page')}</a></div>` : ''}
+            <h1>${escapeHtml(page.title)}</h1>
+            ${page.description ? `<p>${escapeHtml(page.description)}</p>` : ''}
+          </header>
+          <section class="cms-body markdown-body">${page.html}</section>
+        </article>
+      </main>
+      ${renderFooter(settings)}
+    </div>
+  `;
+  return renderShell({ title: page.title, body, settings, locale });
+}
+
+function renderCmsStudio(user, locale) {
+  const settings = getSettings();
+  const body = `
+    <div class="app-shell">
+      ${renderTopbar(user, locale, '/cms-studio')}
+      <main class="admin-page cms-studio-page">
+        <div class="admin-header">
+          <div>
+            <h1>${tf(locale, 'cmsStudio', 'CMS Studio')}</h1>
+            <p class="hint">${tf(locale, 'cmsStudioText', 'Create full-width Markdown or HTML-backed pages that appear in the Pages plugin.')}</p>
+          </div>
+          <div class="panel-head-actions">
+            <a class="button ghost" href="/pages">${tf(locale, 'openPages', 'Open pages')}</a>
+            <button class="button primary" type="button" data-new-cms-page>${tf(locale, 'createPage', 'Create page')}</button>
+          </div>
+        </div>
+        <div id="cmsStudioError" class="notice admin-error" hidden></div>
+        <section class="admin-grid cms-studio-grid">
+          <div class="panel content-nav-panel">
+            <div class="panel-head">
+              <h2>${tf(locale, 'pages', 'Pages')}</h2>
+            </div>
+            <div id="cmsPageTree" class="content-tree"></div>
+          </div>
+          <div class="panel content-editor-panel">
+            <div class="panel-head">
+              <h2 id="cmsEditorTitle">${tf(locale, 'cmsEditor', 'CMS editor')}</h2>
+            </div>
+            <div class="content-editor-body">
+              <div id="cmsEditorEmpty" class="empty-state content-empty-state">
+                <h1>${tf(locale, 'selectPage', 'Select a page')}</h1>
+                <p>${tf(locale, 'selectCmsPageText', 'Choose a page from the list or create a new one to start editing.')}</p>
+              </div>
+              <form id="cmsEditorForm" class="modal-form" hidden>
+                <input name="slug" type="hidden">
+                <div class="content-meta">
+                  <label>${tf(locale, 'pageSlug', 'Page slug')} <input name="display_slug" readonly></label>
+                  <label>${tf(locale, 'filePath', 'File path')} <input name="relative_path" readonly></label>
+                  <label>${tf(locale, 'title', 'Title')} <input name="title" required></label>
+                  <label>${tf(locale, 'coverImageUrl', 'Cover image URL')} <input name="coverImage" placeholder="https://..."></label>
+                  <label>${tf(locale, 'rolesCsv', 'Roles (comma separated)')} <input name="roles" placeholder="Users"></label>
+                </div>
+                <label>${tf(locale, 'description', 'Description')} <textarea name="description"></textarea></label>
+                <label>${tf(locale, 'excerpt', 'Excerpt')} <textarea name="excerpt"></textarea></label>
+                <label>${tf(locale, 'rawMarkdown', 'Raw Markdown / HTML')}
+                  <textarea name="markdown" class="code-input content-raw-input" spellcheck="false"></textarea>
+                </label>
+                <div class="modal-actions">
+                  <button class="button danger" type="button" data-delete-cms-page>${tf(locale, 'delete', 'Delete')}</button>
+                  <button class="button primary" type="submit">${t(locale, 'save')}</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </section>
+      </main>
+      ${renderFooter(settings)}
+    </div>
+  `;
+  return renderShell({ title: tf(locale, 'cmsStudio', 'CMS Studio'), body, settings, locale, scripts: ['cms-studio.js'] });
+}
+
+function renderCmsEmptyState(locale, canEdit = false) {
+  return `
+    <section class="empty-state">
+      <h1>${tf(locale, 'noCmsPages', 'No pages yet')}</h1>
+      <p>${canEdit ? tf(locale, 'noCmsPagesEditorText', 'Open CMS Studio to create the first page for this section.') : tf(locale, 'noCmsPagesText', 'No pages have been published in this section yet.')}</p>
+    </section>
+  `;
+}
+
 function renderProfileDialog(user, locale) {
   return `
     <div class="profile-popover" data-profile-popover hidden>
@@ -1251,9 +1482,9 @@ function renderAdmin(user, locale) {
         </div>
         <div id="adminError" class="notice admin-error" hidden></div>
         <nav class="admin-tabs" aria-label="${tf(locale, 'adminSections', 'Admin sections')}">
-          <button class="admin-tab-button" type="button" data-admin-tab="plugins">${tf(locale, 'plugins', 'Plugins')}</button>
           <button class="admin-tab-button" type="button" data-admin-tab="instance">${tf(locale, 'instanceSettings', 'Instance')}</button>
           <button class="admin-tab-button" type="button" data-admin-tab="access">${tf(locale, 'accessManagement', 'Access')}</button>
+          <button class="admin-tab-button" type="button" data-admin-tab="plugins">${tf(locale, 'plugins', 'Plugins')}</button>
           <button class="admin-tab-button active" type="button" data-admin-tab="content">${tf(locale, 'documentation', 'Documentation')}</button>
           <button class="admin-tab-button" type="button" data-admin-tab="downloads">${tf(locale, 'downloadCenter', 'Download Center')}</button>
         </nav>
@@ -1688,7 +1919,8 @@ async function handleFactoryReset(req, res) {
   resetDatabaseToFactoryDefaults();
   catalog = loadCatalog();
   blogCatalog = loadBlogCatalog();
-  logInfo(`Factory reset reloaded catalog with ${catalog.policies.length} documents and ${blogCatalog.posts.length} blog posts`);
+  cmsCatalog = loadCmsCatalog();
+  logInfo(`Factory reset reloaded catalog with ${catalog.policies.length} documents, ${blogCatalog.posts.length} blog posts and ${cmsCatalog.pages.length} CMS pages`);
   clearSessionCookie(res);
   sendJson(res, 200, { ok: true });
 }
@@ -2065,6 +2297,95 @@ function serializeBlogPost({ meta, markdown = '' }) {
   return lines.join('\n');
 }
 
+function getCmsStudioTree() {
+  return {
+    tree: cmsCatalog.pages.map((page) => ({
+      slug: page.slug,
+      title: page.title,
+      relativePath: toContentRelativePath(page.file),
+      coverImage: page.coverImage
+    }))
+  };
+}
+
+function getEditableCmsPage(slug) {
+  const safeSlug = sanitizeSlugSegment(slug);
+  if (!safeSlug) return null;
+  const filePath = normalize(join(CMS_DIR, `${safeSlug}.md`));
+  if (!filePath.startsWith(CMS_DIR) || !existsSync(filePath)) return null;
+  const raw = readFileSync(filePath, 'utf8');
+  const parsed = parseFrontmatter(raw);
+  return {
+    slug: safeSlug,
+    filePath,
+    relativePath: toContentRelativePath(filePath),
+    markdown: parsed.markdown,
+    meta: {
+      title: String(parsed.meta.title || '').trim(),
+      description: String(parsed.meta.description || '').trim(),
+      excerpt: String(parsed.meta.excerpt || '').trim(),
+      coverImage: String(parsed.meta.coverImage || '').trim(),
+      roles: Array.isArray(parsed.meta.roles) ? parsed.meta.roles : []
+    }
+  };
+}
+
+function handleGetCmsStudioPage(res, url) {
+  const slug = String(url.searchParams.get('slug') || '').trim();
+  const page = getEditableCmsPage(slug);
+  if (!page) return sendJson(res, 404, { error: 'CMS page not found.' });
+  sendJson(res, 200, page);
+}
+
+async function handleSaveCmsStudioPage(req, res, user) {
+  const payload = await readJson(req);
+  const mode = payload.mode === 'create' ? 'create' : 'update';
+  const slug = sanitizeSlugSegment(payload.slug);
+  const title = String(payload.title || '').trim();
+  const description = String(payload.description || '').trim();
+  const excerpt = String(payload.excerpt || '').trim();
+  const coverImage = String(payload.coverImage || '').trim();
+  const roles = normalizeRoleList(payload.roles);
+  const markdown = String(payload.markdown || '');
+
+  if (!slug) return sendJson(res, 400, { error: 'A page slug is required.' });
+  if (!title) return sendJson(res, 400, { error: 'A page title is required.' });
+
+  const filePath = normalize(join(CMS_DIR, `${slug}.md`));
+  if (!filePath.startsWith(CMS_DIR)) return sendJson(res, 400, { error: 'Invalid CMS path.' });
+  if (mode === 'create' && existsSync(filePath)) return sendJson(res, 409, { error: 'This CMS page already exists.' });
+  if (mode === 'update' && !existsSync(filePath)) return sendJson(res, 404, { error: 'CMS page not found.' });
+
+  const raw = serializeCmsPage({
+    meta: { title, description, excerpt, coverImage, roles, editor: user.name || '' },
+    markdown: markdown.trim() || `# ${title}\n\nWrite your page here.\n`
+  });
+  writeFileSync(filePath, ensureTrailingNewline(raw), 'utf8');
+  cmsCatalog = loadCmsCatalog();
+  sendJson(res, 200, { ok: true, slug });
+}
+
+function handleDeleteCmsStudioPage(res, pathname) {
+  const slug = sanitizeSlugSegment(decodeURIComponent(pathname.split('/').pop() || ''));
+  if (!slug) return sendJson(res, 400, { error: 'Invalid CMS slug.' });
+  const filePath = normalize(join(CMS_DIR, `${slug}.md`));
+  if (!filePath.startsWith(CMS_DIR) || !existsSync(filePath)) return sendJson(res, 404, { error: 'CMS page not found.' });
+  unlinkSync(filePath);
+  cmsCatalog = loadCmsCatalog();
+  sendJson(res, 200, { ok: true });
+}
+
+function serializeCmsPage({ meta, markdown = '' }) {
+  const lines = ['---'];
+  lines.push(`title: ${String(meta.title || '').trim()}`);
+  if (meta.description) lines.push(`description: ${String(meta.description).trim()}`);
+  if (meta.excerpt) lines.push(`excerpt: ${String(meta.excerpt).trim()}`);
+  if (meta.coverImage) lines.push(`coverImage: ${String(meta.coverImage).trim()}`);
+  lines.push(`roles: [${normalizeRoleList(meta.roles).join(', ')}]`);
+  lines.push('---', '', String(markdown || '').replace(/\r\n/g, '\n').replace(/^\n+/, ''));
+  return lines.join('\n');
+}
+
 function listUsers() {
   const users = db.prepare('SELECT id, email, name, provider, is_admin, active, created_at FROM users ORDER BY name').all();
   const roles = db.prepare(`
@@ -2282,6 +2603,42 @@ function loadBlogCatalog() {
   const bySlug = new Map(posts.map((post) => [post.slug, post]));
   logInfo(`Blog catalog loaded: ${posts.length} posts`);
   return { posts, bySlug };
+}
+
+function loadCmsCatalog() {
+  logInfo(`Loading CMS catalog from ${CMS_DIR}`);
+  if (!existsSync(CMS_DIR)) {
+    mkdirSync(CMS_DIR, { recursive: true });
+    return { pages: [], bySlug: new Map(), home: null };
+  }
+
+  const pages = readdirSync(CMS_DIR)
+    .filter((file) => file.endsWith('.md'))
+    .map((file) => createCmsPage(join(CMS_DIR, file), file.replace(/\.md$/i, '')))
+    .sort((a, b) => a.title.localeCompare(b.title, 'de'));
+  const bySlug = new Map(pages.map((page) => [page.slug, page]));
+  const home = bySlug.get('index') || null;
+  logInfo(`CMS catalog loaded: ${pages.length} pages`);
+  return { pages, bySlug, home };
+}
+
+function createCmsPage(filePath, slug) {
+  const raw = readFileSync(filePath, 'utf8');
+  const { meta, markdown } = parseFrontmatter(raw);
+  const rendered = markdownToHtml(markdown, `page/${slug}`);
+  const roles = Array.isArray(meta.roles) ? meta.roles : [];
+  return {
+    slug,
+    file: filePath,
+    title: meta.title || titleFromSlug(slug),
+    description: meta.description || '',
+    excerpt: meta.excerpt || meta.description || '',
+    coverImage: meta.coverImage || '',
+    roles,
+    html: rendered.html,
+    headings: rendered.headings,
+    markdown
+  };
 }
 
 function createBlogPost(filePath, slug) {
@@ -2512,13 +2869,7 @@ function parseMenuLinks(value) {
   try {
     const links = JSON.parse(value);
     if (!Array.isArray(links)) return [];
-    return links
-      .map((link) => ({
-        label: String(link.label || '').trim(),
-        href: String(link.href || '#').trim(),
-        roles: Array.isArray(link.roles) ? link.roles.map(String) : []
-      }))
-      .filter((link) => link.label && link.href);
+    return normalizeMenuLinkList(links);
   } catch {
     return [];
   }
@@ -2527,6 +2878,26 @@ function parseMenuLinks(value) {
 function normalizeMenuLinks(value) {
   const text = typeof value === 'string' ? value : JSON.stringify(value || []);
   return JSON.stringify(parseMenuLinks(text), null, 2);
+}
+
+function normalizeMenuLinkList(links) {
+  return links
+    .map((link) => normalizeMenuLink(link))
+    .filter(Boolean);
+}
+
+function normalizeMenuLink(link) {
+  const label = String(link?.label || '').trim();
+  const roles = Array.isArray(link?.roles) ? link.roles.map(String) : [];
+  const children = Array.isArray(link?.children) ? normalizeMenuLinkList(link.children) : [];
+  const href = String(link?.href || '').trim();
+
+  if (!label) return null;
+  if (children.length) {
+    return { label, roles, children };
+  }
+  if (!href) return null;
+  return { label, href, roles };
 }
 
 function loadLocales() {
@@ -2661,7 +3032,7 @@ function removeAdminFromDefaultMenuLinks() {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('menu_links');
   if (!row) return;
   const links = parseMenuLinks(row.value);
-  const filtered = links.filter((link) => link.href !== '/admin');
+  const filtered = removeMenuLinkByHref(links, '/admin');
   if (filtered.length !== links.length) {
     db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(JSON.stringify(filtered, null, 2), 'menu_links');
   }
@@ -2671,6 +3042,32 @@ function canSeeMenuLink(user, link) {
   if (!link.roles.length) return true;
   if (user.is_admin) return true;
   return link.roles.some((role) => user.roles.includes(role));
+}
+
+function filterVisibleMenuLinks(links, user) {
+  return links
+    .map((link) => {
+      if (Array.isArray(link.children) && link.children.length) {
+        const children = filterVisibleMenuLinks(link.children, user);
+        if (!children.length) return null;
+        return { ...link, children };
+      }
+      return canSeeMenuLink(user, link) ? link : null;
+    })
+    .filter(Boolean);
+}
+
+function removeMenuLinkByHref(links, href) {
+  return links
+    .map((link) => {
+      if (Array.isArray(link.children) && link.children.length) {
+        const children = removeMenuLinkByHref(link.children, href);
+        if (!children.length) return null;
+        return { ...link, children };
+      }
+      return link.href === href ? null : link;
+    })
+    .filter(Boolean);
 }
 
 function sidebarContainsActive(items, activeSlug) {
@@ -2759,6 +3156,16 @@ function canReadBlogPost(user, post) {
   return post.roles.some((role) => user.roles.includes(role));
 }
 
+function canManageCms(user) {
+  return Boolean(user?.is_admin || user?.roles?.includes('CMS-Editor'));
+}
+
+function canReadCmsPage(user, page) {
+  if (user?.is_admin) return true;
+  if (!page.roles.length) return true;
+  return page.roles.some((role) => user.roles.includes(role));
+}
+
 function requireAdmin(user, res, callback) {
   if (!user?.is_admin) return sendJson(res, 403, { error: 'Admin permissions required.' });
   return callback();
@@ -2766,6 +3173,11 @@ function requireAdmin(user, res, callback) {
 
 function requireBlogEditor(user, res, callback) {
   if (!canManageBlog(user)) return sendJson(res, 403, { error: 'Blog editor permissions required.' });
+  return callback();
+}
+
+function requireCmsEditor(user, res, callback) {
+  if (!canManageCms(user)) return sendJson(res, 403, { error: 'CMS editor permissions required.' });
   return callback();
 }
 

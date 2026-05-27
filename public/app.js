@@ -9,6 +9,7 @@ document.addEventListener('click', (event) => {
   const toggle = event.target.closest('[data-toggle-section]');
   const themeToggle = event.target.closest('[data-theme-toggle]');
   const copyCode = event.target.closest('[data-copy-code]');
+  const navDropdownTrigger = event.target.closest('[data-nav-dropdown-trigger]');
   const languageSelect = event.target.closest('select.language-select');
   const profileOpen = event.target.closest('[data-profile-open]');
   const profileClose = event.target.closest('[data-profile-close]');
@@ -20,6 +21,7 @@ document.addEventListener('click', (event) => {
   if (opener) document.body.classList.add('sidebar-open');
   if (closer) document.body.classList.remove('sidebar-open');
   if (toggle) toggle.closest('.nav-group')?.classList.toggle('collapsed');
+  if (navDropdownTrigger) toggleNavDropdown(navDropdownTrigger);
   if (themeToggle) {
     const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
     document.documentElement.dataset.theme = next;
@@ -36,6 +38,9 @@ document.addEventListener('click', (event) => {
   if ((passwordClose || event.target === passwordModal) && passwordModal) passwordModal.hidden = true;
   if (profile && !profile.hidden && !event.target.closest('[data-profile-popover]') && !profileOpen) {
     profile.hidden = true;
+  }
+  if (!event.target.closest('[data-nav-dropdown]')) {
+    closeNavDropdowns();
   }
 });
 
@@ -207,6 +212,22 @@ function initNetworkBackground() {
   resize();
   addEventListener('resize', resize);
   requestAnimationFrame(draw);
+}
+
+function toggleNavDropdown(trigger) {
+  const dropdown = trigger.closest('[data-nav-dropdown]');
+  const isOpen = dropdown?.classList.contains('open');
+  closeNavDropdowns();
+  if (!dropdown || isOpen) return;
+  dropdown.classList.add('open');
+  trigger.setAttribute('aria-expanded', 'true');
+}
+
+function closeNavDropdowns() {
+  document.querySelectorAll('[data-nav-dropdown].open').forEach((dropdown) => {
+    dropdown.classList.remove('open');
+    dropdown.querySelector('[data-nav-dropdown-trigger]')?.setAttribute('aria-expanded', 'false');
+  });
 }
 
 async function initDownloadsApp() {
