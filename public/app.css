@@ -184,6 +184,11 @@ select {
   transform: translateY(-1px);
 }
 
+.top-links a.active {
+  background: color-mix(in srgb, var(--primary) 14%, var(--surface-elevated));
+  color: var(--primary-dark);
+}
+
 .workspace {
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr);
@@ -368,8 +373,196 @@ select {
 
 .content {
   width: 100%;
-  max-width: 1500px;
+  /*max-width: 1500px;*/
   padding: 14px 10px 80px;
+}
+
+.feature-hub,
+.downloads-layout {
+  display: grid;
+  gap: 24px;
+}
+
+.feature-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 18px;
+}
+
+.feature-card,
+.plugin-card {
+  display: grid;
+  gap: 10px;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--surface-elevated) 92%, var(--theme-tint));
+  box-shadow: var(--shadow-soft);
+}
+
+.feature-card strong,
+.plugin-card h3 {
+  font-size: 20px;
+}
+
+.feature-card-label {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.plugin-grid {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+}
+
+.plugin-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-start;
+}
+
+.plugin-card p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.download-detail-panel {
+  overflow: hidden;
+}
+
+.blog-page {
+  /*width: min(100%, 1500px);*/
+  width: 100%;
+  padding-right: 18px;
+  padding-left: 18px;
+}
+
+.blog-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, 32%);
+  gap: 1%;
+}
+
+.blog-card,
+.featured-blog-card {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xl);
+  background: color-mix(in srgb, var(--surface-elevated) 92%, var(--theme-tint));
+  box-shadow: var(--shadow-soft);
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.blog-card:hover,
+.featured-blog-card:hover {
+  transform: translateY(-3px);
+  border-color: color-mix(in srgb, var(--primary) 34%, var(--line));
+  box-shadow: var(--shadow);
+}
+
+.featured-blog-card {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.95fr) minmax(0, 1.05fr);
+  margin-bottom: 24px;
+}
+
+.blog-card-media,
+.featured-blog-media,
+.blog-hero-media {
+  background: color-mix(in srgb, var(--primary) 10%, var(--surface));
+}
+
+.blog-card-media img,
+.featured-blog-media img,
+.blog-hero-media img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.blog-card-media {
+  aspect-ratio: 16 / 10;
+}
+
+.featured-blog-media {
+  min-height: 100%;
+}
+
+.blog-card-body,
+.featured-blog-copy {
+  display: grid;
+  gap: 12px;
+  padding: 22px;
+}
+
+.blog-card h2,
+.featured-blog-copy h2 {
+  margin: 0;
+  font-size: clamp(22px, 3vw, 34px);
+  line-height: 1.12;
+}
+
+.blog-card p,
+.featured-blog-copy p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.blog-card-meta {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.blog-card-meta span {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-soft) 86%, var(--theme-tint));
+}
+
+.blog-hero {
+  display: grid;
+  gap: 22px;
+}
+
+.blog-hero-media {
+  max-height: 460px;
+  overflow: hidden;
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-soft);
+}
+
+.blog-hero-copy {
+  display: grid;
+  gap: 16px;
+}
+
+.blog-hero-copy h1 {
+  margin: 0;
+  font-size: calc(clamp(34px, 5vw, 58px) * var(--font-scale));
+  line-height: 1.04;
+}
+
+.blog-hero-copy p {
+  margin: 0;
+  color: var(--muted);
+  font-size: calc(18px * var(--font-scale));
+  line-height: 1.7;
+}
+
+.blog-studio-grid {
+  grid-template-columns: 320px minmax(0, 1fr);
 }
 
 .policy {
@@ -904,11 +1097,16 @@ dd {
 .empty-state,
 .error-page {
   padding: 22px;
+  margin: 18px;
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--surface-elevated) 90%, var(--theme-tint));
   box-shadow: var(--shadow);
   backdrop-filter: blur(22px) saturate(140%);
+}
+
+.notice {
+  margin: 9px 0px 9px;
 }
 
 .admin-page {
@@ -1527,6 +1725,7 @@ fieldset {
 
   .policy-header,
   .admin-grid,
+  .blog-studio-grid,
   .settings-form,
   .login-page {
     grid-template-columns: 1fr;
@@ -1573,6 +1772,10 @@ fieldset {
 
   .top-actions {
     gap: 8px;
+  }
+
+  .featured-blog-card {
+    grid-template-columns: 1fr;
   }
 }
 
