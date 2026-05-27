@@ -4,6 +4,7 @@ description: Manage users, roles, branding, and workspace resets from the built-
 roles: [Users]
 owner: Atlas
 version: "1.0"
+position: 3
 reviewDate: 2027-01-01
 ---
 

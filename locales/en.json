@@ -1,6 +1,6 @@
 {
   "code": "en",
-  "flag": "🇬🇧",
+  "flag": "gb",
   "nativeName": "English",
   "ui": {
     "admin": "🔧 Atlas Admin",
@@ -43,7 +43,7 @@
     "roles": "🛡️ Roles",
     "createRole": "➕ Create role",
     "editRole": "✏️ Edit role",
-    "designLogin": "⚙️ Workspace settings",
+    "designLogin": "⚙️ Instance settings",
     "portalName": "Site name",
     "sidebarTitle": "Sidebar title",
     "fontFamily": "Font family",

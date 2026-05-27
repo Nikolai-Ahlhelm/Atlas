@@ -4,6 +4,7 @@ description: Understand the main building blocks of Atlas in one short overview.
 roles: [Users]
 owner: Atlas
 version: "1.0"
+position: 1
 reviewDate: 2027-01-01
 ---
 

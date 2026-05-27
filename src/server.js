@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
 import { randomBytes, scryptSync, timingSafeEqual, createHash } from 'node:crypto';
-import { readFileSync, readdirSync, existsSync, mkdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -18,7 +18,8 @@ const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '127.0.0.1';
 const COOKIE_NAME = 'atlas_session';
 const PACKAGE_JSON = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
-const LOCALES = loadLocales();
+let localesCache = null;
+let localesCacheSignature = '';
 const FONT_FAMILIES = {
   manrope: '"Manrope", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif',
   jakarta: '"Plus Jakarta Sans", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif',
@@ -40,6 +41,16 @@ const DEFAULT_SETTINGS = {
   default_language: 'en',
   default_theme: 'light',
   theme_color: '#2368c4',
+  light_theme_color: '#2368c4',
+  dark_theme_color: '#6f8cff',
+  light_bg_color: '#eff4ff',
+  dark_bg_color: '#091120',
+  light_bg_glow: '#599cff',
+  dark_bg_glow: '#5580ff',
+  light_ui_color: '#ffffff',
+  dark_ui_color: '#172339',
+  light_ui_opacity: '0.82',
+  dark_ui_opacity: '0.84',
   font_scale: '1',
   font_family: 'manrope',
   login_eyebrow: 'Atlas',
@@ -184,6 +195,11 @@ async function route(req, res) {
   if (url.pathname.startsWith('/api/admin/roles/') && req.method === 'DELETE') return requireAdmin(user, res, () => handleDeleteRole(res, url.pathname));
   if (url.pathname === '/api/admin/settings' && req.method === 'GET') return requireAdmin(user, res, () => sendJson(res, 200, getSettings()));
   if (url.pathname === '/api/admin/settings' && req.method === 'POST') return requireAdmin(user, res, () => handleUpdateSettings(req, res));
+  if (url.pathname === '/api/admin/content/tree' && req.method === 'GET') return requireAdmin(user, res, () => sendJson(res, 200, getEditableContentTree()));
+  if (url.pathname === '/api/admin/content/page' && req.method === 'GET') return requireAdmin(user, res, () => handleGetEditablePage(res, url));
+  if (url.pathname === '/api/admin/content/page' && req.method === 'POST') return requireAdmin(user, res, () => handleSaveEditablePage(req, res));
+  if (url.pathname === '/api/admin/content/category' && req.method === 'GET') return requireAdmin(user, res, () => handleGetEditableCategory(res, url));
+  if (url.pathname === '/api/admin/content/category' && req.method === 'POST') return requireAdmin(user, res, () => handleSaveEditableCategory(req, res));
   if (url.pathname === '/api/admin/reset' && req.method === 'POST') return requireAdmin(user, res, () => handleFactoryReset(req, res));
   if (url.pathname === '/api/admin/reload' && req.method === 'POST') return requireAdmin(user, res, () => {
     logInfo(`Admin content reload requested by ${user.email}`);
@@ -684,7 +700,7 @@ function renderApp({ user, activeSlug, policy, notice, locale }) {
         </aside>
         <main class="content">
           ${notice ? `<div class="notice">${escapeHtml(notice)}</div>` : ''}
-          ${current ? renderPolicy(current, locale) : renderEmptyState(locale)}
+          ${current ? renderPolicy(current, locale, user) : renderEmptyState(locale)}
         </main>
       </div>
       ${renderFooter(settings)}
@@ -773,13 +789,15 @@ function renderProfileDialog(user, locale) {
   `;
 }
 
-function renderPolicy(policy, locale) {
+function renderPolicy(policy, locale, user) {
   const breadcrumbs = findBreadcrumbs(catalog.sidebar, policy.slug);
+  const editLinks = user?.is_admin ? renderPolicyAdminActions(policy, locale) : '';
   return `
     <article class="policy">
       ${renderBreadcrumbs(breadcrumbs, policy)}
       <div class="policy-header">
         <div>
+          ${editLinks}
           <!--<p class="eyebrow">${escapeHtml(policy.owner || 'Atlas')}</p>-->
           <h1>${escapeHtml(policy.title)}</h1>
           <p>${escapeHtml(policy.description)}</p>
@@ -796,6 +814,18 @@ function renderPolicy(policy, locale) {
       </div>
     </article>
   `;
+}
+
+function renderPolicyAdminActions(policy, locale) {
+  const pageHref = `/admin?tab=content&page=${encodeURIComponent(policy.slug)}`;
+  const actions = [
+    `<a class="button ghost policy-admin-button" href="${pageHref}">${tf(locale, 'editPage', 'Edit page')}</a>`
+  ];
+  const categoryDir = getCategoryDirFromPolicySlug(policy.slug);
+  if (categoryDir) {
+    actions.push(`<a class="button ghost policy-admin-button" href="/admin?tab=content&dir=${encodeURIComponent(categoryDir)}">${tf(locale, 'editCategory', 'Edit category')}</a>`);
+  }
+  return `<div class="policy-admin-actions">${actions.join('')}</div>`;
 }
 
 function renderBreadcrumbs(breadcrumbs, policy) {
@@ -837,28 +867,90 @@ function renderAdmin(user, locale) {
       <main class="admin-page">
         <div class="admin-header">
           <div>
-            <p class="eyebrow">${t(locale, 'administration')}</p>
+            <!--<p class="eyebrow">${t(locale, 'administration')}</p>-->
             <h1>${t(locale, 'adminPortal')}</h1>
           </div>
           <button class="button primary" data-reload-content type="button">${t(locale, 'reloadMarkdown')}</button>
         </div>
         <div id="adminError" class="notice admin-error" hidden></div>
+        <nav class="admin-tabs" aria-label="${tf(locale, 'adminSections', 'Admin sections')}">
+          <button class="admin-tab-button" type="button" data-admin-tab="instance">${tf(locale, 'instanceSettings', 'Instance')}</button>
+          <button class="admin-tab-button" type="button" data-admin-tab="access">${tf(locale, 'accessManagement', 'Access')}</button>
+          <button class="admin-tab-button active" type="button" data-admin-tab="content">${tf(locale, 'contentManager', 'Content')}</button>
+        </nav>
         <section class="admin-grid">
-          <div class="panel">
+          <div class="panel content-nav-panel" data-admin-panel="content">
+            <div class="panel-head">
+              <h2>${tf(locale, 'contentManager', 'Content')}</h2>
+              <div class="panel-head-actions">
+                <button class="button" data-new-category type="button">${tf(locale, 'createCategory', 'Create category')}</button>
+                <button class="button" data-new-page type="button">${tf(locale, 'createPage', 'Create page')}</button>
+              </div>
+            </div>
+            <div id="contentTree" class="content-tree"></div>
+          </div>
+          <div class="panel content-editor-panel" data-admin-panel="content">
+            <div class="panel-head">
+              <h2 id="contentEditorTitle">${tf(locale, 'contentEditor', 'Editor')}</h2>
+            </div>
+            <div class="content-editor-body">
+              <div id="contentEditorEmpty" class="empty-state content-empty-state">
+                <h1>${tf(locale, 'selectContentEntry', 'Select a page or category')}</h1>
+                <p>${tf(locale, 'selectContentEntryText', 'Admins can edit raw Markdown here and create new content without opening a file editor.')}</p>
+              </div>
+              <form id="pageEditorForm" class="modal-form" hidden>
+                <input name="slug" type="hidden">
+                <input name="extra_meta" type="hidden">
+                <div class="content-meta">
+                  <label>${tf(locale, 'pageSlug', 'Page slug')} <input name="display_slug" readonly></label>
+                  <label>${tf(locale, 'filePath', 'File path')} <input name="relative_path" readonly></label>
+                </div>
+                <div class="content-meta">
+                  <label>${tf(locale, 'title', 'Title')} <input name="title"></label>
+                  <label>${tf(locale, 'description', 'Description')} <input name="description"></label>
+                  <label>${tf(locale, 'owner', 'Owner')} <input name="owner"></label>
+                  <label>${tf(locale, 'version', 'Version')} <input name="version"></label>
+                  <label>${tf(locale, 'review', 'Review date')} <input name="reviewDate" placeholder="2026-12-31"></label>
+                  <label>${tf(locale, 'position', 'Position')} <input name="position" type="number" step="1" value="999"></label>
+                  <label>${tf(locale, 'rolesCsv', 'Roles (comma separated)')} <input name="roles" placeholder="Admins, Users"></label>
+                </div>
+                <label>${tf(locale, 'rawMarkdown', 'Raw Markdown')}
+                  <textarea name="markdown" class="code-input content-raw-input" spellcheck="false"></textarea>
+                </label>
+                <div class="modal-actions">
+                  <button class="button primary" type="submit">${t(locale, 'save')}</button>
+                </div>
+              </form>
+              <form id="categoryEditorForm" class="modal-form" hidden>
+                <input name="relative_dir" type="hidden">
+                <div class="content-meta">
+                  <label>${tf(locale, 'categoryPath', 'Category path')} <input name="display_dir" readonly></label>
+                  <label>${tf(locale, 'categoryConfigPath', 'Config file')} <input name="config_path" readonly></label>
+                </div>
+                <label>${tf(locale, 'label', 'Label')} <input name="label" required></label>
+                <label>${tf(locale, 'position', 'Position')} <input name="position" type="number" step="1" value="999"></label>
+                <label>${tf(locale, 'rolesCsv', 'Roles (comma separated)')} <input name="roles" placeholder="Admins, Users"></label>
+                <div class="modal-actions">
+                  <button class="button primary" type="submit">${t(locale, 'save')}</button>
+                </div>
+              </form>
+            </div>
+          </div>
+          <div class="panel" data-admin-panel="access">
             <div class="panel-head">
               <h2>${t(locale, 'users')}</h2>
               <button class="button" data-new-user type="button">${t(locale, 'createUser')}</button>
             </div>
             <div id="usersTable" class="table-wrap"></div>
           </div>
-          <div class="panel">
+          <div class="panel" data-admin-panel="access">
             <div class="panel-head">
               <h2>${t(locale, 'roles')}</h2>
               <button class="button" data-new-role type="button">${t(locale, 'createRole')}</button>
             </div>
             <div id="rolesTable" class="table-wrap"></div>
           </div>
-          <div class="panel settings-panel">
+          <div class="panel settings-panel" data-admin-panel="instance">
             <div class="panel-head">
               <h2>${t(locale, 'designLogin')}</h2>
             </div>
@@ -875,7 +967,16 @@ function renderAdmin(user, locale) {
                   <option value="dark" ${settings.default_theme === 'dark' ? 'selected' : ''}>Dark</option>
                 </select>
               </label>
-              <label>${t(locale, 'themeColor')} <input name="theme_color" type="color" value="${escapeHtml(settings.theme_color)}"></label>
+              <label>${tf(locale, 'lightThemeColor', 'Light accent color')} <input name="light_theme_color" type="color" value="${escapeHtml(settings.light_theme_color)}"></label>
+              <label>${tf(locale, 'darkThemeColor', 'Dark accent color')} <input name="dark_theme_color" type="color" value="${escapeHtml(settings.dark_theme_color)}"></label>
+              <label>${tf(locale, 'lightBackgroundColor', 'Light background color')} <input name="light_bg_color" type="color" value="${escapeHtml(settings.light_bg_color)}"></label>
+              <label>${tf(locale, 'darkBackgroundColor', 'Dark background color')} <input name="dark_bg_color" type="color" value="${escapeHtml(settings.dark_bg_color)}"></label>
+              <label>${tf(locale, 'lightBackgroundGlow', 'Light background glow')} <input name="light_bg_glow" type="color" value="${escapeHtml(settings.light_bg_glow)}"></label>
+              <label>${tf(locale, 'darkBackgroundGlow', 'Dark background glow')} <input name="dark_bg_glow" type="color" value="${escapeHtml(settings.dark_bg_glow)}"></label>
+              <label>${tf(locale, 'lightUiColor', 'Light UI surface color')} <input name="light_ui_color" type="color" value="${escapeHtml(settings.light_ui_color)}"></label>
+              <label>${tf(locale, 'darkUiColor', 'Dark UI surface color')} <input name="dark_ui_color" type="color" value="${escapeHtml(settings.dark_ui_color)}"></label>
+              <label>${tf(locale, 'lightUiOpacity', 'Light UI opacity')} <input name="light_ui_opacity" type="range" min="0.3" max="1" step="0.02" value="${escapeHtml(settings.light_ui_opacity)}"><span data-ui-opacity-preview="light">${Math.round(Number(settings.light_ui_opacity) * 100)}%</span></label>
+              <label>${tf(locale, 'darkUiOpacity', 'Dark UI opacity')} <input name="dark_ui_opacity" type="range" min="0.3" max="1" step="0.02" value="${escapeHtml(settings.dark_ui_opacity)}"><span data-ui-opacity-preview="dark">${Math.round(Number(settings.dark_ui_opacity) * 100)}%</span></label>
               <label>${t(locale, 'fontSize')} <input name="font_scale" type="range" min="0.9" max="1.25" step="0.05" value="${escapeHtml(settings.font_scale)}"><span data-font-preview>${Math.round(Number(settings.font_scale) * 100)}%</span></label>
               <label>${t(locale, 'loginEyebrow')} <input name="login_eyebrow" value="${escapeHtml(settings.login_eyebrow)}"></label>
               <label>${t(locale, 'loginTitle')} <input name="login_title" value="${escapeHtml(settings.login_title)}"></label>
@@ -906,7 +1007,7 @@ function renderAdmin(user, locale) {
               <button class="button primary" type="submit">${t(locale, 'saveSettings')}</button>
             </form>
           </div>
-          <div class="panel danger-panel">
+          <div class="panel danger-panel" data-admin-panel="instance">
             <div class="panel-head">
               <h2>${t(locale, 'factoryReset')}</h2>
             </div>
@@ -957,14 +1058,31 @@ function renderLogin(req, user, locale) {
 }
 
 function renderShell({ title, body, admin = false, settings = getSettings(), locale = 'en' }) {
-  const themeColor = sanitizeColor(settings.theme_color);
+  const lightThemeColor = sanitizeColor(settings.light_theme_color || settings.theme_color, DEFAULT_SETTINGS.light_theme_color);
+  const darkThemeColor = sanitizeColor(settings.dark_theme_color, DEFAULT_SETTINGS.dark_theme_color);
+  const lightBgColor = sanitizeColor(settings.light_bg_color, DEFAULT_SETTINGS.light_bg_color);
+  const darkBgColor = sanitizeColor(settings.dark_bg_color, DEFAULT_SETTINGS.dark_bg_color);
+  const lightBgGlow = sanitizeColor(settings.light_bg_glow, DEFAULT_SETTINGS.light_bg_glow);
+  const darkBgGlow = sanitizeColor(settings.dark_bg_glow, DEFAULT_SETTINGS.dark_bg_glow);
+  const lightUiColor = sanitizeColor(settings.light_ui_color, DEFAULT_SETTINGS.light_ui_color);
+  const darkUiColor = sanitizeColor(settings.dark_ui_color, DEFAULT_SETTINGS.dark_ui_color);
+  const lightUiOpacity = Number(sanitizeOpacity(settings.light_ui_opacity, DEFAULT_SETTINGS.light_ui_opacity));
+  const darkUiOpacity = Number(sanitizeOpacity(settings.dark_ui_opacity, DEFAULT_SETTINGS.dark_ui_opacity));
+  const lightUiSurface = hexToRgba(lightUiColor, lightUiOpacity);
+  const lightUiStrong = hexToRgba(lightUiColor, Math.min(1, lightUiOpacity + 0.12));
+  const lightUiSoft = hexToRgba(lightUiColor, Math.max(0.18, lightUiOpacity - 0.18));
+  const lightUiElevated = hexToRgba(lightUiColor, Math.min(1, lightUiOpacity + 0.08));
+  const darkUiSurface = hexToRgba(darkUiColor, darkUiOpacity);
+  const darkUiStrong = hexToRgba(darkUiColor, Math.min(1, darkUiOpacity + 0.1));
+  const darkUiSoft = hexToRgba(darkUiColor, Math.max(0.18, darkUiOpacity - 0.18));
+  const darkUiElevated = hexToRgba(darkUiColor, Math.min(1, darkUiOpacity + 0.08));
   const fontScale = Math.min(1.25, Math.max(0.9, Number(settings.font_scale) || 1));
   const fontFamily = FONT_FAMILIES[normalizeFontFamily(settings.font_family)];
   const cssUrl = assetUrl('app.css');
   const appJsUrl = assetUrl('app.js');
   const adminScript = admin ? inlineScriptTag('admin.js') : '';
   return `<!doctype html>
-    <html lang="${escapeHtml(locale)}">
+    <html lang="${escapeHtml(locale)}" style="--primary-light: ${lightThemeColor}; --primary-dark-mode: ${darkThemeColor}; --bg-light-base: ${lightBgColor}; --bg-dark-base: ${darkBgColor}; --bg-light-glow: ${lightBgGlow}; --bg-dark-glow: ${darkBgGlow}; --surface-light-base: ${lightUiColor}; --surface-dark-base: ${darkUiColor}; --surface-light: ${lightUiSurface}; --surface-light-strong: ${lightUiStrong}; --surface-light-soft: ${lightUiSoft}; --surface-light-elevated: ${lightUiElevated}; --surface-dark: ${darkUiSurface}; --surface-dark-strong: ${darkUiStrong}; --surface-dark-soft: ${darkUiSoft}; --surface-dark-elevated: ${darkUiElevated};">
       <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -974,7 +1092,7 @@ function renderShell({ title, body, admin = false, settings = getSettings(), loc
         <script defer src="${appJsUrl}"></script>
         ${adminScript}
       </head>
-      <body data-default-theme="${escapeHtml(settings.default_theme)}" style="--primary: ${themeColor}; --font-scale: ${fontScale}; --app-font: ${escapeHtml(fontFamily)};">${body}</body>
+      <body data-default-theme="${escapeHtml(settings.default_theme)}" style="--font-scale: ${fontScale}; --app-font: ${escapeHtml(fontFamily)};">${body}</body>
     </html>`;
 }
 
@@ -1184,7 +1302,17 @@ async function handleUpdateSettings(req, res) {
     logo_image: sanitizeDataImage(payload.logo_image || ''),
     default_language: isSupportedLocale(payload.default_language) ? String(payload.default_language) : DEFAULT_SETTINGS.default_language,
     default_theme: payload.default_theme === 'dark' ? 'dark' : 'light',
-    theme_color: sanitizeColor(payload.theme_color || DEFAULT_SETTINGS.theme_color),
+    theme_color: sanitizeColor(payload.light_theme_color || payload.theme_color || DEFAULT_SETTINGS.light_theme_color, DEFAULT_SETTINGS.light_theme_color),
+    light_theme_color: sanitizeColor(payload.light_theme_color || payload.theme_color || DEFAULT_SETTINGS.light_theme_color, DEFAULT_SETTINGS.light_theme_color),
+    dark_theme_color: sanitizeColor(payload.dark_theme_color || DEFAULT_SETTINGS.dark_theme_color, DEFAULT_SETTINGS.dark_theme_color),
+    light_bg_color: sanitizeColor(payload.light_bg_color || DEFAULT_SETTINGS.light_bg_color, DEFAULT_SETTINGS.light_bg_color),
+    dark_bg_color: sanitizeColor(payload.dark_bg_color || DEFAULT_SETTINGS.dark_bg_color, DEFAULT_SETTINGS.dark_bg_color),
+    light_bg_glow: sanitizeColor(payload.light_bg_glow || DEFAULT_SETTINGS.light_bg_glow, DEFAULT_SETTINGS.light_bg_glow),
+    dark_bg_glow: sanitizeColor(payload.dark_bg_glow || DEFAULT_SETTINGS.dark_bg_glow, DEFAULT_SETTINGS.dark_bg_glow),
+    light_ui_color: sanitizeColor(payload.light_ui_color || DEFAULT_SETTINGS.light_ui_color, DEFAULT_SETTINGS.light_ui_color),
+    dark_ui_color: sanitizeColor(payload.dark_ui_color || DEFAULT_SETTINGS.dark_ui_color, DEFAULT_SETTINGS.dark_ui_color),
+    light_ui_opacity: sanitizeOpacity(payload.light_ui_opacity, DEFAULT_SETTINGS.light_ui_opacity),
+    dark_ui_opacity: sanitizeOpacity(payload.dark_ui_opacity, DEFAULT_SETTINGS.dark_ui_opacity),
     font_scale: String(Math.min(1.25, Math.max(0.9, Number(payload.font_scale) || 1))),
     font_family: normalizeFontFamily(payload.font_family),
     login_eyebrow: String(payload.login_eyebrow || ''),
@@ -1217,6 +1345,191 @@ async function handleUpdateSettings(req, res) {
   sendJson(res, 200, { ok: true, settings: getSettings() });
 }
 
+function getEditableContentTree() {
+  const directories = [];
+  const docs = existsSync(DOCS_DIR) ? scanEditableDocsDirectory(DOCS_DIR, '', directories) : [];
+  return {
+    tree: [
+      {
+        type: 'page',
+        slug: '__home',
+        title: 'Home',
+        relativePath: 'home.md'
+      },
+      ...docs
+    ],
+    directories
+  };
+}
+
+function scanEditableDocsDirectory(dir, relativeDir, directories) {
+  const categoryMeta = readCategoryMeta(relativeDir);
+  const label = categoryMeta.label || titleFromSlug(relativeDir.split('/').pop() || 'docs');
+  if (!directories.some((item) => item.relativeDir === relativeDir)) {
+    directories.push({ relativeDir, label });
+  }
+
+  const entries = readdirSync(dir)
+    .filter((entry) => !entry.startsWith('.') && entry !== 'category.json')
+    .map((entry) => {
+      const fullPath = join(dir, entry);
+      return { entry, fullPath, isDirectory: statSync(fullPath).isDirectory() };
+    })
+    .sort((a, b) => {
+      if (a.entry === 'index.md') return -1;
+      if (b.entry === 'index.md') return 1;
+      if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+      return a.entry.localeCompare(b.entry, 'de');
+    });
+
+  const children = [];
+  for (const item of entries) {
+    if (item.isDirectory) {
+      const childRelative = relativeDir ? `${relativeDir}/${item.entry}` : item.entry;
+      children.push({
+        type: 'category',
+        relativeDir: childRelative,
+        label: readCategoryMeta(childRelative).label || titleFromSlug(item.entry),
+        children: scanEditableDocsDirectory(item.fullPath, childRelative, directories)
+      });
+      continue;
+    }
+
+    if (!item.entry.endsWith('.md')) continue;
+    const basename = item.entry.replace(/\.md$/i, '');
+    const slug = basename === 'index' ? relativeDir : (relativeDir ? `${relativeDir}/${basename}` : basename);
+    if (!slug) continue;
+    const policy = catalog.bySlug.get(slug);
+    children.push({
+      type: 'page',
+      slug,
+      title: policy?.title || titleFromSlug(basename === 'index' ? relativeDir.split('/').pop() || 'index' : basename),
+      relativePath: toContentRelativePath(item.fullPath)
+    });
+  }
+  return children;
+}
+
+function handleGetEditablePage(res, url) {
+  const slug = String(url.searchParams.get('slug') || '').trim();
+  const page = getEditablePage(slug);
+  if (!page) return sendJson(res, 404, { error: 'Page not found.' });
+  sendJson(res, 200, page);
+}
+
+async function handleSaveEditablePage(req, res) {
+  const payload = await readJson(req);
+  const mode = payload.mode === 'create' ? 'create' : 'update';
+  const meta = normalizeEditablePageMeta(payload);
+  const markdown = String(payload.markdown || '');
+
+  if (mode === 'create') {
+    const parentDir = sanitizeRelativeDir(payload.parentDir);
+    const asIndex = payload.asIndex === true;
+    const slugSegment = sanitizeSlugSegment(payload.slug);
+    if (asIndex && !parentDir) return sendJson(res, 400, { error: 'A root index page is not supported.' });
+    if (!asIndex && !slugSegment) return sendJson(res, 400, { error: 'A page slug is required.' });
+
+    const targetDir = resolveDocsDirectory(parentDir);
+    if (!existsSync(targetDir)) mkdirSync(targetDir, { recursive: true });
+    const fileName = asIndex ? 'index.md' : `${slugSegment}.md`;
+    const filePath = resolveDocsPath(parentDir ? `${parentDir}/${fileName}` : fileName);
+    if (existsSync(filePath)) return sendJson(res, 409, { error: 'This page already exists.' });
+
+    if (!meta.title) {
+      meta.title = titleFromSlug(asIndex ? parentDir.split('/').pop() || 'index' : slugSegment);
+    }
+    const initialRaw = serializeEditablePage({
+      meta,
+      extraMeta: normalizeExtraMeta(payload.extraMeta),
+      markdown: markdown.trim() || `# ${meta.title}\n\nWrite your content here.\n`
+    });
+    writeFileSync(filePath, ensureTrailingNewline(initialRaw), 'utf8');
+    catalog = loadCatalog();
+    const slug = asIndex ? parentDir : (parentDir ? `${parentDir}/${slugSegment}` : slugSegment);
+    logInfo(`Content page created: ${slug}`, { file: filePath });
+    return sendJson(res, 200, { ok: true, slug });
+  }
+
+  const slug = String(payload.slug || '').trim();
+  const page = getEditablePage(slug);
+  if (!page) return sendJson(res, 404, { error: 'Page not found.' });
+  const nextRaw = serializeEditablePage({
+    meta,
+    extraMeta: normalizeExtraMeta(payload.extraMeta),
+    markdown
+  });
+  writeFileSync(page.filePath, ensureTrailingNewline(nextRaw), 'utf8');
+  catalog = loadCatalog();
+  logInfo(`Content page updated: ${slug}`, { file: page.filePath });
+  sendJson(res, 200, { ok: true, slug });
+}
+
+function handleGetEditableCategory(res, url) {
+  const relativeDir = sanitizeRelativeDir(url.searchParams.get('dir') || '');
+  const directoryPath = resolveDocsDirectory(relativeDir);
+  if (!existsSync(directoryPath)) return sendJson(res, 404, { error: 'Category not found.' });
+
+  const meta = readCategoryMeta(relativeDir);
+  sendJson(res, 200, {
+    relativeDir,
+    label: meta.label || titleFromSlug(relativeDir.split('/').pop() || 'docs'),
+    position: Number(meta.position ?? meta.sidebar_position ?? 999),
+    roles: Array.isArray(meta.roles) ? meta.roles : [],
+    configPath: toContentRelativePath(join(directoryPath, 'category.json'))
+  });
+}
+
+async function handleSaveEditableCategory(req, res) {
+  const payload = await readJson(req);
+  const mode = payload.mode === 'create' ? 'create' : 'update';
+
+  if (mode === 'create') {
+    const parentDir = sanitizeRelativeDir(payload.parentDir);
+    const slugSegment = sanitizeSlugSegment(payload.slug);
+    if (!slugSegment) return sendJson(res, 400, { error: 'A category slug is required.' });
+    const relativeDir = parentDir ? `${parentDir}/${slugSegment}` : slugSegment;
+    const directoryPath = resolveDocsDirectory(relativeDir);
+    if (existsSync(directoryPath)) return sendJson(res, 409, { error: 'This category already exists.' });
+    mkdirSync(directoryPath, { recursive: true });
+
+    const label = String(payload.label || '').trim() || titleFromSlug(slugSegment);
+    writeCategoryMeta(relativeDir, {
+      label,
+      position: Number(payload.position ?? 999),
+      roles: normalizeRoleList(payload.roles)
+    });
+
+    if (payload.createIndex === true) {
+      const indexPath = resolveDocsPath(`${relativeDir}/index.md`);
+      const indexTitle = String(payload.indexTitle || '').trim() || label;
+      const raw = String(payload.raw || '').trim() || buildMarkdownTemplate({
+        title: indexTitle,
+        description: '',
+        roles: normalizeRoleList(payload.roles)
+      });
+      writeFileSync(indexPath, ensureTrailingNewline(raw), 'utf8');
+    }
+
+    catalog = loadCatalog();
+    logInfo(`Content category created: ${relativeDir}`, { directory: directoryPath });
+    return sendJson(res, 200, { ok: true, relativeDir });
+  }
+
+  const relativeDir = sanitizeRelativeDir(payload.relative_dir || payload.relativeDir || '');
+  const directoryPath = resolveDocsDirectory(relativeDir);
+  if (!existsSync(directoryPath)) return sendJson(res, 404, { error: 'Category not found.' });
+
+  writeCategoryMeta(relativeDir, {
+    label: String(payload.label || '').trim() || titleFromSlug(relativeDir.split('/').pop() || 'docs'),
+    position: Number(payload.position ?? 999),
+    roles: normalizeRoleList(payload.roles)
+  });
+  catalog = loadCatalog();
+  logInfo(`Content category updated: ${relativeDir}`, { directory: directoryPath });
+  sendJson(res, 200, { ok: true, relativeDir });
+}
+
 function listUsers() {
   const users = db.prepare('SELECT id, email, name, provider, is_admin, active, created_at FROM users ORDER BY name').all();
   const roles = db.prepare(`
@@ -1241,7 +1554,17 @@ function getSettings() {
   const rows = db.prepare('SELECT key, value FROM settings').all();
   const settings = { ...DEFAULT_SETTINGS };
   for (const row of rows) settings[row.key] = row.value;
-  settings.theme_color = sanitizeColor(settings.theme_color);
+  settings.theme_color = sanitizeColor(settings.theme_color, DEFAULT_SETTINGS.light_theme_color);
+  settings.light_theme_color = sanitizeColor(settings.light_theme_color || settings.theme_color, DEFAULT_SETTINGS.light_theme_color);
+  settings.dark_theme_color = sanitizeColor(settings.dark_theme_color, DEFAULT_SETTINGS.dark_theme_color);
+  settings.light_bg_color = sanitizeColor(settings.light_bg_color, DEFAULT_SETTINGS.light_bg_color);
+  settings.dark_bg_color = sanitizeColor(settings.dark_bg_color, DEFAULT_SETTINGS.dark_bg_color);
+  settings.light_bg_glow = sanitizeColor(settings.light_bg_glow, DEFAULT_SETTINGS.light_bg_glow);
+  settings.dark_bg_glow = sanitizeColor(settings.dark_bg_glow, DEFAULT_SETTINGS.dark_bg_glow);
+  settings.light_ui_color = sanitizeColor(settings.light_ui_color, DEFAULT_SETTINGS.light_ui_color);
+  settings.dark_ui_color = sanitizeColor(settings.dark_ui_color, DEFAULT_SETTINGS.dark_ui_color);
+  settings.light_ui_opacity = sanitizeOpacity(settings.light_ui_opacity, DEFAULT_SETTINGS.light_ui_opacity);
+  settings.dark_ui_opacity = sanitizeOpacity(settings.dark_ui_opacity, DEFAULT_SETTINGS.dark_ui_opacity);
   settings.font_scale = String(Math.min(1.25, Math.max(0.9, Number(settings.font_scale) || 1)));
   settings.font_family = normalizeFontFamily(settings.font_family);
   settings.logo_image = sanitizeDataImage(settings.logo_image);
@@ -1300,7 +1623,7 @@ function loadLocales() {
   const fallback = {
     en: {
       code: 'en',
-      flag: 'EN',
+      flag: 'gb',
       nativeName: 'English',
       ui: {}
     }
@@ -1313,19 +1636,48 @@ function loadLocales() {
       const parsed = JSON.parse(readFileSync(join(LOCALES_DIR, file), 'utf8'));
       const code = String(parsed.code || file.replace(/\.json$/i, '')).toLowerCase();
       if (code) locales[code] = { ...parsed, code, ui: parsed.ui || {} };
-    } catch {
-      // Invalid locale files should not prevent the portal from starting.
+    } catch (error) {
+      logWarn(`Skipping invalid locale file ${file}`, error instanceof Error ? error.message : String(error));
     }
   }
   return Object.keys(locales).length ? locales : fallback;
 }
 
+function getLocalesSignature() {
+  if (!existsSync(LOCALES_DIR)) return 'missing';
+  try {
+    return readdirSync(LOCALES_DIR)
+      .filter((name) => name.endsWith('.json'))
+      .map((name) => {
+        const filePath = join(LOCALES_DIR, name);
+        const stats = statSync(filePath);
+        return `${name}:${stats.mtimeMs}:${stats.size}`;
+      })
+      .sort()
+      .join('|');
+  } catch (error) {
+    logWarn('Failed to inspect locale directory', error instanceof Error ? error.message : String(error));
+    return 'error';
+  }
+}
+
+function getLocales() {
+  const signature = getLocalesSignature();
+  if (!localesCache || signature !== localesCacheSignature) {
+    localesCache = loadLocales();
+    localesCacheSignature = signature;
+    logInfo(`Loaded locales: ${Object.keys(localesCache).sort().join(', ')}`);
+  }
+  return localesCache;
+}
+
 function getAvailableLanguages() {
-  return Object.values(LOCALES).sort((a, b) => a.nativeName.localeCompare(b.nativeName));
+  return Object.values(getLocales()).sort((a, b) => a.nativeName.localeCompare(b.nativeName));
 }
 
 function isSupportedLocale(code) {
-  return Boolean(code && LOCALES[String(code).toLowerCase()]);
+  const locales = getLocales();
+  return Boolean(code && locales[String(code).toLowerCase()]);
 }
 
 function detectBrowserLocale(req) {
@@ -1349,12 +1701,19 @@ function resolveLocale(req, user, settings) {
 }
 
 function t(locale, key) {
-  const active = LOCALES[locale]?.ui || {};
-  const fallback = LOCALES[DEFAULT_SETTINGS.default_language]?.ui || LOCALES.en?.ui || {};
+  const locales = getLocales();
+  const active = locales[locale]?.ui || {};
+  const fallback = locales[DEFAULT_SETTINGS.default_language]?.ui || locales.en?.ui || {};
   return active[key] || fallback[key] || key;
 }
 
+function tf(locale, key, fallback) {
+  const value = t(locale, key);
+  return value === key ? fallback : value;
+}
+
 function getClientI18n(locale) {
+  const locales = getLocales();
   return {
     locale,
     languages: getAvailableLanguages().map((item) => ({
@@ -1363,22 +1722,28 @@ function getClientI18n(locale) {
       nativeName: item.nativeName
     })),
     messages: {
-      ...(LOCALES[DEFAULT_SETTINGS.default_language]?.ui || LOCALES.en?.ui || {}),
-      ...(LOCALES[locale]?.ui || {})
+      ...(locales[DEFAULT_SETTINGS.default_language]?.ui || locales.en?.ui || {}),
+      ...(locales[locale]?.ui || {})
     }
   };
 }
 
 function renderLanguageSelect(selected, locale, name = 'language') {
   const current = isSupportedLocale(selected) ? String(selected).toLowerCase() : locale;
+  const languages = getAvailableLanguages();
+  const currentLanguage = languages.find((language) => language.code === current) || languages[0] || { flag: '', nativeName: '' };
+  const flagUrl = currentLanguage.flag ? `/assets/flags/4x3/${escapeAttribute(currentLanguage.flag)}.svg` : '';
   return `
-    <select name="${escapeAttribute(name)}" class="language-select">
-      ${getAvailableLanguages().map((language) => `
-        <option value="${escapeHtml(language.code)}" ${language.code === current ? 'selected' : ''}>
-          ${escapeHtml(language.flag)} ${escapeHtml(language.nativeName)}
-        </option>
-      `).join('')}
-    </select>
+    <div class="language-select-wrapper">
+      <img class="language-select-flag" src="${escapeHtml(flagUrl)}" alt="${escapeHtml(currentLanguage.nativeName)}" aria-hidden="true">
+      <select name="${escapeAttribute(name)}" class="language-select">
+        ${languages.map((language) => `
+          <option value="${escapeHtml(language.code)}" data-flag="${escapeHtml(language.flag)}" ${language.code === current ? 'selected' : ''}>
+            ${escapeHtml(language.nativeName)}
+          </option>
+        `).join('')}
+      </select>
+    </div>
   `;
 }
 
@@ -1479,6 +1844,177 @@ function requireAdmin(user, res, callback) {
   return callback();
 }
 
+function getCategoryDirFromPolicySlug(slug) {
+  const value = String(slug || '').trim();
+  if (!value || value === '__home') return '';
+  const parts = value.split('/').filter(Boolean);
+  if (parts.length === 1) return '';
+  return parts.slice(0, -1).join('/');
+}
+
+function getEditablePage(slug) {
+  if (slug === '__home') {
+    if (!existsSync(HOME_PATH)) return null;
+    const raw = readFileSync(HOME_PATH, 'utf8');
+    const parsed = parseFrontmatter(raw);
+    return {
+      slug,
+      title: 'Home',
+      relativePath: 'home.md',
+      filePath: HOME_PATH,
+      raw,
+      markdown: parsed.markdown,
+      meta: extractEditablePageMeta(parsed.meta),
+      extraMeta: extractExtraPageMeta(parsed.meta)
+    };
+  }
+
+  const policy = catalog.bySlug.get(slug);
+  if (!policy?.file || !existsSync(policy.file)) return null;
+  const raw = readFileSync(policy.file, 'utf8');
+  const parsed = parseFrontmatter(raw);
+  return {
+    slug,
+    title: policy.title,
+    relativePath: toContentRelativePath(policy.file),
+    filePath: policy.file,
+    raw,
+    markdown: parsed.markdown,
+    meta: extractEditablePageMeta(parsed.meta),
+    extraMeta: extractExtraPageMeta(parsed.meta)
+  };
+}
+
+function readCategoryMeta(relativeDir) {
+  const filePath = resolveDocsPath(relativeDir ? `${relativeDir}/category.json` : 'category.json');
+  if (!existsSync(filePath)) return {};
+  try {
+    return JSON.parse(readFileSync(filePath, 'utf8'));
+  } catch (error) {
+    logWarn(`Invalid category file ignored for ${relativeDir || '.'}`, error instanceof Error ? error.message : String(error));
+    return {};
+  }
+}
+
+function writeCategoryMeta(relativeDir, meta) {
+  const directoryPath = resolveDocsDirectory(relativeDir);
+  if (!existsSync(directoryPath)) mkdirSync(directoryPath, { recursive: true });
+  const filePath = resolveDocsPath(relativeDir ? `${relativeDir}/category.json` : 'category.json');
+  const payload = {
+    label: String(meta.label || '').trim(),
+    position: Number.isFinite(Number(meta.position)) ? Number(meta.position) : 999,
+    roles: Array.isArray(meta.roles) ? meta.roles : []
+  };
+  writeFileSync(filePath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+}
+
+function sanitizeRelativeDir(value = '') {
+  const normalized = String(value || '')
+    .replace(/\\/g, '/')
+    .split('/')
+    .map((part) => sanitizeSlugSegment(part))
+    .filter(Boolean)
+    .join('/');
+  return normalized;
+}
+
+function sanitizeSlugSegment(value = '') {
+  return slugify(String(value || '').trim());
+}
+
+function normalizeRoleList(value) {
+  const items = Array.isArray(value)
+    ? value
+    : String(value || '').split(/[,\n]/);
+  return Array.from(new Set(items.map((item) => String(item).trim()).filter(Boolean)));
+}
+
+function ensureTrailingNewline(value = '') {
+  const normalized = String(value || '').replace(/\r\n/g, '\n');
+  return normalized.endsWith('\n') ? normalized : `${normalized}\n`;
+}
+
+function resolveDocsDirectory(relativeDir = '') {
+  const fullPath = normalize(join(DOCS_DIR, relativeDir || '.'));
+  if (!fullPath.startsWith(DOCS_DIR)) throw new Error('Invalid docs directory.');
+  return fullPath;
+}
+
+function resolveDocsPath(relativePath = '') {
+  const fullPath = normalize(join(DOCS_DIR, relativePath || '.'));
+  if (!fullPath.startsWith(DOCS_DIR)) throw new Error('Invalid docs path.');
+  return fullPath;
+}
+
+function toContentRelativePath(filePath) {
+  return normalize(filePath).slice(CONTENT_DIR.length + 1).replace(/\\/g, '/');
+}
+
+function extractEditablePageMeta(meta = {}) {
+  return {
+    title: String(meta.title || '').trim(),
+    description: String(meta.description || '').trim(),
+    owner: String(meta.owner || '').trim(),
+    version: String(meta.version || '').trim(),
+    reviewDate: String(meta.reviewDate || '').trim(),
+    roles: Array.isArray(meta.roles) ? meta.roles : [],
+    position: Number(meta.position ?? meta.sidebar_position ?? 999)
+  };
+}
+
+function extractExtraPageMeta(meta = {}) {
+  const known = new Set(['title', 'description', 'owner', 'version', 'reviewDate', 'roles', 'position', 'sidebar_position']);
+  return Object.fromEntries(Object.entries(meta).filter(([key]) => !known.has(key)));
+}
+
+function normalizeEditablePageMeta(payload = {}) {
+  const positionValue = Number(payload.position ?? 999);
+  return {
+    title: String(payload.title || '').trim(),
+    description: String(payload.description || '').trim(),
+    owner: String(payload.owner || '').trim(),
+    version: String(payload.version || '').trim(),
+    reviewDate: String(payload.reviewDate || '').trim(),
+    roles: normalizeRoleList(payload.roles),
+    position: Number.isFinite(positionValue) ? positionValue : 999
+  };
+}
+
+function normalizeExtraMeta(value) {
+  if (!value) return {};
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function serializeEditablePage({ meta, extraMeta = {}, markdown = '' }) {
+  const merged = { ...extraMeta };
+  if (meta.title) merged.title = meta.title;
+  if (meta.description) merged.description = meta.description;
+  if (meta.owner) merged.owner = meta.owner;
+  if (meta.version) merged.version = meta.version;
+  if (meta.reviewDate) merged.reviewDate = meta.reviewDate;
+  merged.roles = Array.isArray(meta.roles) ? meta.roles : [];
+  merged.position = Number.isFinite(Number(meta.position)) ? Number(meta.position) : 999;
+
+  const lines = ['---'];
+  for (const [key, value] of Object.entries(merged)) {
+    if (Array.isArray(value)) {
+      lines.push(`${key}: [${value.map((item) => String(item).trim()).filter(Boolean).join(', ')}]`);
+      continue;
+    }
+    lines.push(`${key}: ${String(value ?? '').trim()}`);
+  }
+  lines.push('---', '', String(markdown || '').replace(/\r\n/g, '\n').replace(/^\n+/, ''));
+  return lines.join('\n');
+}
+
 function hashPassword(password) {
   const salt = randomBytes(16).toString('hex');
   const hash = scryptSync(password, salt, 64).toString('hex');
@@ -1526,9 +2062,22 @@ function serveAsset(res, pathname) {
   const rel = pathname.replace('/assets/', '');
   const file = normalize(join(PUBLIC_DIR, rel));
   if (!file.startsWith(PUBLIC_DIR) || !existsSync(file)) return sendText(res, 404, 'Not found');
-  const type = extname(file) === '.css' ? 'text/css' : 'text/javascript';
+  const extension = extname(file).toLowerCase();
+  const type = ({
+    '.css': 'text/css',
+    '.js': 'text/javascript',
+    '.svg': 'image/svg+xml',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.webp': 'image/webp',
+    '.gif': 'image/gif',
+    '.ico': 'image/x-icon',
+    '.json': 'application/json'
+  })[extension] || 'application/octet-stream';
+  const isTextLike = type.startsWith('text/') || type === 'application/json' || type === 'image/svg+xml';
   res.writeHead(200, {
-    'content-type': `${type}; charset=utf-8`,
+    'content-type': isTextLike ? `${type}; charset=utf-8` : type,
     'cache-control': 'no-store, max-age=0',
     pragma: 'no-cache'
   });
@@ -1571,8 +2120,23 @@ function escapeAttribute(value = '') {
   return String(value).replace(/['"\\\n\r]/g, '');
 }
 
-function sanitizeColor(value = '') {
-  return /^#[0-9a-f]{6}$/i.test(String(value)) ? String(value) : DEFAULT_SETTINGS.theme_color;
+function sanitizeColor(value = '', fallback = DEFAULT_SETTINGS.light_theme_color) {
+  return /^#[0-9a-f]{6}$/i.test(String(value)) ? String(value) : fallback;
+}
+
+function sanitizeOpacity(value = '', fallback = '0.82') {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return String(Math.min(1, Math.max(0.3, number)));
+}
+
+function hexToRgba(hex, alpha) {
+  const color = sanitizeColor(hex, '#000000').slice(1);
+  const r = Number.parseInt(color.slice(0, 2), 16);
+  const g = Number.parseInt(color.slice(2, 4), 16);
+  const b = Number.parseInt(color.slice(4, 6), 16);
+  const a = Math.min(1, Math.max(0, Number(alpha) || 0));
+  return `rgba(${r}, ${g}, ${b}, ${a.toFixed(3)})`;
 }
 
 function sanitizeDataImage(value = '') {
