@@ -103,6 +103,13 @@ const FEATURE_DEFINITIONS = {
     href: '/pages',
     description: 'Standalone content pages with Markdown and HTML support, managed like a lightweight CMS.',
     defaultEnabled: true
+  },
+  forms: {
+    key: 'forms',
+    label: 'Forms',
+    href: '/forms',
+    description: 'Configurable request and workflow forms with per-form access, submissions and evaluation.',
+    defaultEnabled: true
   }
 };
 
@@ -249,6 +256,10 @@ async function route(req, res) {
   if (url.pathname === '/api/admin/downloads/file' && req.method === 'GET') return requireAdmin(user, res, () => handleGetDownloadFile(res, url, true));
   if (url.pathname === '/api/admin/downloads/file' && req.method === 'POST') return requireAdmin(user, res, () => handleSaveDownloadFile(req, res));
   if (url.pathname.startsWith('/api/admin/downloads/file/') && req.method === 'DELETE') return requireAdmin(user, res, () => handleDeleteDownloadFile(res, url.pathname));
+  if (url.pathname === '/api/admin/forms' && req.method === 'GET') return requireAdmin(user, res, () => sendJson(res, 200, getFormAdminTree()));
+  if (url.pathname === '/api/admin/forms/form' && req.method === 'GET') return requireAdmin(user, res, () => handleGetAdminForm(res, url));
+  if (url.pathname === '/api/admin/forms/form' && req.method === 'POST') return requireAdmin(user, res, () => handleSaveAdminForm(req, res, user));
+  if (url.pathname.startsWith('/api/admin/forms/form/') && req.method === 'DELETE') return requireAdmin(user, res, () => handleDeleteAdminForm(res, url.pathname));
   if (url.pathname === '/api/blog/studio/tree' && req.method === 'GET') return requireBlogEditor(user, res, () => sendJson(res, 200, getBlogStudioTree()));
   if (url.pathname === '/api/blog/studio/post' && req.method === 'GET') return requireBlogEditor(user, res, () => handleGetBlogStudioPost(res, url));
   if (url.pathname === '/api/blog/studio/post' && req.method === 'POST') return requireBlogEditor(user, res, () => handleSaveBlogStudioPost(req, res, user));
@@ -270,6 +281,11 @@ async function route(req, res) {
   if (url.pathname === '/api/downloads/tree') return requirePlugin('download_center', res, () => sendJson(res, 200, getDownloadTreeForUser(user)));
   if (url.pathname === '/api/downloads/file' && req.method === 'GET') return requirePlugin('download_center', res, () => handleGetDownloadFile(res, url, false, user));
   if (url.pathname.startsWith('/download/')) return requirePlugin('download_center', res, () => handleDownloadAsset(res, url.pathname, user));
+  if (url.pathname === '/api/forms' && req.method === 'GET') return requirePlugin('forms', res, () => sendJson(res, 200, listFormsForUser(user)));
+  if (url.pathname === '/api/forms/form' && req.method === 'GET') return requirePlugin('forms', res, () => handleGetPublicForm(res, url, user));
+  if (url.pathname === '/api/forms/form/submit' && req.method === 'POST') return requirePlugin('forms', res, () => handleSubmitForm(req, res, user));
+  if (url.pathname === '/api/forms/submissions' && req.method === 'GET') return requirePlugin('forms', res, () => handleGetFormSubmissions(res, url, user));
+  if (url.pathname === '/api/forms/submissions/review' && req.method === 'POST') return requirePlugin('forms', res, () => handleReviewFormSubmission(req, res, user));
 
   if (url.pathname === '/') {
     if (isPluginEnabled('documentation')) return sendHtml(res, 200, renderApp({ user, activeSlug: null, locale }));
@@ -279,6 +295,10 @@ async function route(req, res) {
   if (url.pathname === '/downloads') {
     if (!isPluginEnabled('download_center')) return sendHtml(res, 404, renderFeatureHub({ user, locale, notice: 'The download center is currently disabled.' }));
     return sendHtml(res, 200, renderDownloadsPage({ user, locale }));
+  }
+  if (url.pathname === '/forms') {
+    if (!isPluginEnabled('forms')) return sendHtml(res, 404, renderFeatureHub({ user, locale, notice: 'The forms feature is currently disabled.' }));
+    return sendHtml(res, 200, renderFormsPage({ user, locale }));
   }
   if (url.pathname === '/blog') {
     if (!isPluginEnabled('blog')) return sendHtml(res, 404, renderFeatureHub({ user, locale, notice: 'The blog feature is currently disabled.' }));
@@ -387,6 +407,33 @@ function initializeDatabase() {
       file_id INTEGER NOT NULL REFERENCES download_files(id) ON DELETE CASCADE,
       role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
       PRIMARY KEY (file_id, role_id)
+    );
+    CREATE TABLE IF NOT EXISTS forms (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      slug TEXT NOT NULL UNIQUE,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      intro_text TEXT NOT NULL DEFAULT '',
+      creator_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      permissions_json TEXT NOT NULL DEFAULT '{}',
+      fields_json TEXT NOT NULL DEFAULT '[]',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS form_submissions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      form_id INTEGER NOT NULL REFERENCES forms(id) ON DELETE CASCADE,
+      submitter_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      submitter_name TEXT NOT NULL DEFAULT '',
+      submitter_email TEXT NOT NULL DEFAULT '',
+      values_json TEXT NOT NULL DEFAULT '{}',
+      status TEXT NOT NULL DEFAULT 'submitted',
+      notes TEXT NOT NULL DEFAULT '',
+      reviewed_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      reviewed_at TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
   `);
 
@@ -505,7 +552,9 @@ function resetDatabaseToFactoryDefaults() {
       DELETE FROM plugins;
       DELETE FROM download_file_roles;
       DELETE FROM download_files;
-      DELETE FROM sqlite_sequence WHERE name IN ('users', 'roles', 'download_files');
+      DELETE FROM form_submissions;
+      DELETE FROM forms;
+      DELETE FROM sqlite_sequence WHERE name IN ('users', 'roles', 'download_files', 'forms', 'form_submissions');
     `);
     for (const file of readdirSync(DOWNLOADS_DIR)) {
       const filePath = normalize(join(DOWNLOADS_DIR, file));
@@ -1048,6 +1097,50 @@ function renderDownloadsPage({ user, locale, notice = '' }) {
   return renderShell({ title: tf(locale, 'downloadCenter', 'Download Center'), body, settings, locale });
 }
 
+function renderFormsPage({ user, locale, notice = '' }) {
+  const settings = getSettings();
+  const body = `
+    <div class="app-shell forms-page" data-forms-app>
+      ${renderTopbar(user, locale, '/forms')}
+      <div class="workspace">
+        <aside class="sidebar" id="sidebar">
+          <div class="sidebar-head">
+            <span>${tf(locale, 'forms', 'Forms')}</span>
+            <button class="icon-button mobile-only" data-sidebar-close aria-label="Close navigation">x</button>
+          </div>
+          <div id="formsNav" class="doc-nav"></div>
+        </aside>
+        <main class="content">
+          ${notice ? `<div class="notice">${escapeHtml(notice)}</div>` : ''}
+          <section class="policy">
+            <div class="policy-header">
+              <div>
+                <p class="eyebrow">${tf(locale, 'forms', 'Forms')}</p>
+                <h1>${tf(locale, 'workflowForms', 'Workflow forms')}</h1>
+                <p>${tf(locale, 'workflowFormsText', 'Submit structured requests, review incoming submissions and keep access aligned to the right people and groups.')}</p>
+              </div>
+              <dl class="meta-grid">
+                <div><dt>${tf(locale, 'featureType', 'Feature')}</dt><dd>${tf(locale, 'structuredForms', 'Structured forms')}</dd></div>
+                <div><dt>${tf(locale, 'access', 'Access')}</dt><dd>${tf(locale, 'perFormAccess', 'Per-form access')}</dd></div>
+                <div><dt>${tf(locale, 'management', 'Management')}</dt><dd>${user.is_admin ? tf(locale, 'manageViaAdmin', 'Manageable in admin portal') : tf(locale, 'roleBased', 'Role based')}</dd></div>
+              </dl>
+            </div>
+            <div class="forms-layout">
+              <div id="formsEmptyState" class="empty-state">
+                <h1>${tf(locale, 'loadingForms', 'Loading forms')}</h1>
+                <p>${tf(locale, 'loadingFormsText', 'Atlas is fetching the forms you can access.')}</p>
+              </div>
+              <div id="formDetailView" class="panel forms-detail-panel" hidden></div>
+            </div>
+          </section>
+        </main>
+      </div>
+      ${renderFooter(settings)}
+    </div>
+  `;
+  return renderShell({ title: tf(locale, 'forms', 'Forms'), body, settings, locale, scripts: ['forms.js'] });
+}
+
 function renderBlogIndexPage({ user, locale, notice = '' }) {
   const settings = getSettings();
   const posts = blogCatalog.posts.filter((post) => canReadBlogPost(user, post));
@@ -1485,6 +1578,7 @@ function renderAdmin(user, locale) {
           <button class="admin-tab-button" type="button" data-admin-tab="instance">${tf(locale, 'instanceSettings', 'Instance')}</button>
           <button class="admin-tab-button" type="button" data-admin-tab="access">${tf(locale, 'accessManagement', 'Access')}</button>
           <button class="admin-tab-button" type="button" data-admin-tab="plugins">${tf(locale, 'plugins', 'Plugins')}</button>
+          <button class="admin-tab-button" type="button" data-admin-tab="forms">${tf(locale, 'forms', 'Forms')}</button>
           <button class="admin-tab-button active" type="button" data-admin-tab="content">${tf(locale, 'documentation', 'Documentation')}</button>
           <button class="admin-tab-button" type="button" data-admin-tab="downloads">${tf(locale, 'downloadCenter', 'Download Center')}</button>
         </nav>
@@ -1494,6 +1588,64 @@ function renderAdmin(user, locale) {
               <h2>${tf(locale, 'pluginManager', 'Plugin manager')}</h2>
             </div>
             <div id="pluginsPanel" class="plugin-grid content-editor-body"></div>
+          </div>
+          <div class="panel content-nav-panel" data-admin-panel="forms">
+            <div class="panel-head">
+              <h2>${tf(locale, 'forms', 'Forms')}</h2>
+              <div class="panel-head-actions">
+                <button class="button" data-new-form type="button">${tf(locale, 'createForm', 'Create form')}</button>
+              </div>
+            </div>
+            <div id="formsTree" class="content-tree"></div>
+          </div>
+          <div class="panel content-editor-panel form-detail-panel-admin" data-admin-panel="forms">
+            <div class="panel-head">
+              <div class="panel-head-actions">
+                <button class="button ghost" id="backToFormsListButton" type="button" hidden>${tf(locale, 'back', 'Back')}</button>
+                <h2 id="formEditorTitle">${tf(locale, 'formEditor', 'Form editor')}</h2>
+              </div>
+            </div>
+            <div class="content-editor-body">
+              <div id="formEditorEmpty" class="empty-state content-empty-state">
+                <h1>${tf(locale, 'selectForm', 'Select a form')}</h1>
+                <p>${tf(locale, 'selectFormText', 'Create request and workflow forms, define fields, and configure who may view, submit or evaluate each form.')}</p>
+              </div>
+              <form id="formEditorForm" class="modal-form" hidden>
+                <input name="id" type="hidden">
+                <div class="content-meta">
+                  <label>${tf(locale, 'formSlug', 'Form slug')} <input name="slug" required placeholder="user-request"></label>
+                  <label>${tf(locale, 'title', 'Title')} <input name="title" required placeholder="User request"></label>
+                  <label>${tf(locale, 'status', 'Status')}
+                    <select name="status">
+                      <option value="active">${tf(locale, 'active', 'Active')}</option>
+                      <option value="archived">${tf(locale, 'archived', 'Archived')}</option>
+                    </select>
+                  </label>
+                </div>
+                <label>${tf(locale, 'description', 'Description')} <textarea name="description"></textarea></label>
+                <label>${tf(locale, 'introText', 'Intro text')} <textarea name="intro_text"></textarea></label>
+                <nav class="builder-subnav" aria-label="${tf(locale, 'formBuilderSections', 'Form builder sections')}">
+                  <button class="admin-tab-button active" type="button" data-form-subtab="fields">${tf(locale, 'fields', 'Fields')}</button>
+                  <button class="admin-tab-button" type="button" data-form-subtab="permissions">${tf(locale, 'permissions', 'Permissions')}</button>
+                </nav>
+                <div class="panel-inline-section" data-form-subpanel="fields">
+                  <div class="panel-head compact">
+                    <h2>${tf(locale, 'fields', 'Fields')}</h2>
+                    <div class="panel-head-actions">
+                      <button class="button" data-add-form-field type="button">${tf(locale, 'addField', 'Add field')}</button>
+                      <button class="button" data-add-divider-field type="button">${tf(locale, 'addSectionDivider', 'Add section divider')}</button>
+                    </div>
+                  </div>
+                  <div id="formFieldsEditor" class="form-fields-editor"></div>
+                </div>
+                <div id="formPermissionsEditor" class="form-permissions-editor" data-form-subpanel="permissions" hidden></div>
+                <div id="formFieldModalHost"></div>
+                <div class="modal-actions">
+                  <button class="button danger" id="deleteFormButton" type="button">${tf(locale, 'delete', 'Delete')}</button>
+                  <button class="button primary" type="submit">${t(locale, 'save')}</button>
+                </div>
+              </form>
+            </div>
           </div>
           <div class="panel content-nav-panel" data-admin-panel="content">
             <div class="panel-head">
@@ -2863,6 +3015,438 @@ function handleDownloadAsset(res, pathname, user) {
     'content-disposition': `attachment; filename="${sanitizeFileName(file.name) || 'download'}"`
   });
   res.end(readFileSync(row.storage_path));
+}
+
+const FORM_PERMISSION_KEYS = ['manage', 'view', 'evaluate', 'submit'];
+const FORM_FIELD_TYPES = new Set(['text', 'textarea', 'email', 'select', 'date', 'number', 'checkbox', 'divider']);
+const FORM_SUBMISSION_STATUSES = new Set(['submitted', 'in_review', 'approved', 'rejected']);
+
+function normalizeEmailList(values) {
+  const list = Array.isArray(values) ? values : [values];
+  return Array.from(new Set(list
+    .flatMap((value) => String(value || '').split(/[,\n]/))
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean)));
+}
+
+function normalizeFormPermissionEntry(value) {
+  return {
+    roles: normalizeRoleList(value?.roles || []),
+    users: normalizeEmailList(value?.users || [])
+  };
+}
+
+function normalizeFormPermissions(value) {
+  const source = value && typeof value === 'object' ? value : {};
+  const normalized = {};
+  for (const key of FORM_PERMISSION_KEYS) normalized[key] = normalizeFormPermissionEntry(source[key]);
+  return normalized;
+}
+
+function normalizeFormFieldKey(value, fallback = 'field') {
+  const base = slugify(String(value || '').trim()) || slugify(fallback) || 'field';
+  return base.replace(/-/g, '_');
+}
+
+function normalizeFormFieldVisibility(value) {
+  const fieldKey = normalizeFormFieldKey(value?.fieldKey || value?.field_key || '', '');
+  if (!fieldKey) return null;
+  const mode = String(value?.mode || '').trim() === 'equals' ? 'equals' : 'filled';
+  const expectedValue = mode === 'equals' ? String(value?.expectedValue ?? value?.expected_value ?? '').trim() : '';
+  return { fieldKey, mode, expectedValue };
+}
+
+function normalizeFormFields(value) {
+  const list = Array.isArray(value) ? value : [];
+  const usedKeys = new Set();
+  const normalized = [];
+
+  for (const [index, field] of list.entries()) {
+    const label = String(field?.label || '').trim();
+    const type = FORM_FIELD_TYPES.has(String(field?.type || '').trim()) ? String(field.type).trim() : 'text';
+    let key = type === 'divider'
+      ? normalizeFormFieldKey(field?.key || label || `divider_${index + 1}`, `divider_${index + 1}`)
+      : normalizeFormFieldKey(field?.key || label || `field_${index + 1}`, `field_${index + 1}`);
+    while (usedKeys.has(key)) key = `${key}_${index + 1}`;
+    usedKeys.add(key);
+    const visibility = normalizeFormFieldVisibility(field?.visibility);
+    normalized.push({
+      key,
+      label: label || (type === 'divider' ? 'Section' : titleFromSlug(key.replace(/_/g, '-'))),
+      type,
+      required: type === 'divider' ? false : Boolean(field?.required),
+      placeholder: String(field?.placeholder || '').trim(),
+      helpText: String(field?.helpText || '').trim(),
+      options: type === 'select' ? normalizeTagList(field?.options || []) : [],
+      visibility
+    });
+  }
+
+  return normalized;
+}
+
+function normalizeFormStatus(value) {
+  return String(value || '').trim().toLowerCase() === 'archived' ? 'archived' : 'active';
+}
+
+function parseJsonObject(value, fallback) {
+  try {
+    return JSON.parse(String(value || ''));
+  } catch {
+    return fallback;
+  }
+}
+
+function normalizeFormRecord(row) {
+  const permissions = normalizeFormPermissions(parseJsonObject(row.permissions_json, {}));
+  const fields = normalizeFormFields(parseJsonObject(row.fields_json, []));
+  const creator = row.creator_email ? {
+    id: row.creator_user_id || null,
+    name: row.creator_name || row.creator_email,
+    email: row.creator_email
+  } : null;
+
+  return {
+    id: row.id,
+    slug: row.slug,
+    title: row.title,
+    description: row.description || '',
+    introText: row.intro_text || '',
+    status: normalizeFormStatus(row.status),
+    permissions,
+    fields,
+    creator,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function listFormsAdmin() {
+  return db.prepare(`
+    SELECT
+      f.*,
+      u.name AS creator_name,
+      u.email AS creator_email
+    FROM forms f
+    LEFT JOIN users u ON u.id = f.creator_user_id
+    ORDER BY f.title, f.slug
+  `).all().map(normalizeFormRecord);
+}
+
+function getFormBySlug(slug) {
+  const value = String(slug || '').trim();
+  if (!value) return null;
+  const row = db.prepare(`
+    SELECT
+      f.*,
+      u.name AS creator_name,
+      u.email AS creator_email
+    FROM forms f
+    LEFT JOIN users u ON u.id = f.creator_user_id
+    WHERE f.slug = ?
+  `).get(value);
+  return row ? normalizeFormRecord(row) : null;
+}
+
+function getFormById(id) {
+  const numericId = Number(id);
+  if (!Number.isInteger(numericId) || numericId <= 0) return null;
+  const row = db.prepare(`
+    SELECT
+      f.*,
+      u.name AS creator_name,
+      u.email AS creator_email
+    FROM forms f
+    LEFT JOIN users u ON u.id = f.creator_user_id
+    WHERE f.id = ?
+  `).get(numericId);
+  return row ? normalizeFormRecord(row) : null;
+}
+
+function getSubmissionCountByFormId() {
+  const rows = db.prepare('SELECT form_id, COUNT(*) AS count FROM form_submissions GROUP BY form_id').all();
+  return new Map(rows.map((row) => [row.form_id, row.count]));
+}
+
+function canMatchFormPermission(user, scope) {
+  if (!user) return false;
+  if (user.is_admin) return true;
+  if (Array.isArray(scope?.users) && scope.users.includes(String(user.email || '').toLowerCase())) return true;
+  return Array.isArray(scope?.roles) && scope.roles.some((role) => user.roles.includes(role));
+}
+
+function isFormCreator(user, form) {
+  return Boolean(user?.id && form?.creator?.id && Number(user.id) === Number(form.creator.id));
+}
+
+function canManageForm(user, form) {
+  return Boolean(user?.is_admin || isFormCreator(user, form) || canMatchFormPermission(user, form.permissions.manage));
+}
+
+function canEvaluateForm(user, form) {
+  return Boolean(canManageForm(user, form) || canMatchFormPermission(user, form.permissions.evaluate));
+}
+
+function canSubmitForm(user, form) {
+  return Boolean(canManageForm(user, form) || canMatchFormPermission(user, form.permissions.submit));
+}
+
+function canViewForm(user, form) {
+  return Boolean(canManageForm(user, form) || canEvaluateForm(user, form) || canSubmitForm(user, form) || canMatchFormPermission(user, form.permissions.view));
+}
+
+function listFormsForUser(user) {
+  const submissionCounts = getSubmissionCountByFormId();
+  return listFormsAdmin()
+    .filter((form) => form.status === 'active')
+    .map((form) => ({
+      ...form,
+      actions: {
+        canManage: canManageForm(user, form),
+        canView: canViewForm(user, form),
+        canEvaluate: canEvaluateForm(user, form),
+        canSubmit: canSubmitForm(user, form)
+      },
+      submissionCount: submissionCounts.get(form.id) || 0
+    }))
+    .filter((form) => form.actions.canView);
+}
+
+function getFormAdminTree() {
+  const submissionCounts = getSubmissionCountByFormId();
+  const tree = listFormsAdmin().map((form) => ({
+    id: form.id,
+    slug: form.slug,
+    title: form.title,
+    status: form.status,
+    submissionCount: submissionCounts.get(form.id) || 0,
+    updatedAt: form.updatedAt
+  }));
+  return { tree };
+}
+
+function getDefaultFormPayload() {
+  return {
+    title: 'User request',
+    description: 'Collect structured user requests and route them for review.',
+    introText: 'Please complete all relevant fields before submitting your request.',
+    status: 'active',
+    permissions: {
+      manage: { roles: ['Admins'], users: [] },
+      view: { roles: [], users: [] },
+      evaluate: { roles: ['Admins'], users: [] },
+      submit: { roles: ['Users'], users: [] }
+    },
+    fields: [
+      { key: 'request_title', label: 'Request title', type: 'text', required: true, placeholder: 'New user account for...', helpText: '', options: [] },
+      { key: 'department', label: 'Department', type: 'text', required: true, placeholder: 'Sales', helpText: '', options: [] },
+      { key: 'details', label: 'Details', type: 'textarea', required: true, placeholder: 'Describe what is needed and why.', helpText: '', options: [] },
+      { key: 'needed_by', label: 'Needed by', type: 'date', required: false, placeholder: '', helpText: '', options: [] }
+    ]
+  };
+}
+
+function handleGetAdminForm(res, url) {
+  const slug = url.searchParams.get('slug');
+  const id = url.searchParams.get('id');
+  const form = slug ? getFormBySlug(slug) : getFormById(id);
+  if (!form) return sendJson(res, 404, { error: 'Form not found.' });
+  sendJson(res, 200, form);
+}
+
+async function handleSaveAdminForm(req, res, user) {
+  const payload = await readJson(req);
+  const id = payload.id ? Number(payload.id) : null;
+  const title = String(payload.title || '').trim();
+  const slug = slugify(String(payload.slug || '').trim() || title);
+  const description = String(payload.description || '').trim();
+  const introText = String(payload.introText || payload.intro_text || '').trim();
+  const status = normalizeFormStatus(payload.status);
+  const permissions = normalizeFormPermissions(payload.permissions);
+  const fields = normalizeFormFields(payload.fields);
+
+  if (!title) return sendJson(res, 400, { error: 'A form title is required.' });
+  if (!slug) return sendJson(res, 400, { error: 'A form slug is required.' });
+  if (!fields.length) return sendJson(res, 400, { error: 'Please add at least one form field.' });
+
+  const existingBySlug = getFormBySlug(slug);
+  if (existingBySlug && (!id || existingBySlug.id !== id)) return sendJson(res, 400, { error: 'This slug is already in use.' });
+
+  if (!id) {
+    const result = db.prepare(`
+      INSERT INTO forms (slug, title, description, intro_text, creator_user_id, status, permissions_json, fields_json, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    `).run(slug, title, description, introText, user.id, status, JSON.stringify(permissions), JSON.stringify(fields));
+    return sendJson(res, 200, { ok: true, id: result.lastInsertRowid, slug });
+  }
+
+  const current = getFormById(id);
+  if (!current) return sendJson(res, 404, { error: 'Form not found.' });
+  db.prepare(`
+    UPDATE forms
+    SET slug = ?, title = ?, description = ?, intro_text = ?, status = ?, permissions_json = ?, fields_json = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(slug, title, description, introText, status, JSON.stringify(permissions), JSON.stringify(fields), id);
+  sendJson(res, 200, { ok: true, id, slug });
+}
+
+function handleDeleteAdminForm(res, pathname) {
+  const id = Number(pathname.split('/').pop());
+  const current = getFormById(id);
+  if (!current) return sendJson(res, 404, { error: 'Form not found.' });
+  db.prepare('DELETE FROM forms WHERE id = ?').run(id);
+  sendJson(res, 200, { ok: true });
+}
+
+function validateSubmissionValue(field, rawValue) {
+  if (field.type === 'divider') return '';
+  if (field.type === 'checkbox') return Boolean(rawValue);
+  const value = String(rawValue ?? '').trim();
+  if (field.required && !value) throw new Error(`Please fill "${field.label}".`);
+  if (!value) return '';
+  if (field.type === 'select' && field.options.length && !field.options.includes(value)) throw new Error(`Please choose a valid option for "${field.label}".`);
+  if (field.type === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) throw new Error(`Please enter a valid email for "${field.label}".`);
+  if (field.type === 'number' && Number.isNaN(Number(value))) throw new Error(`Please enter a number for "${field.label}".`);
+  return value;
+}
+
+function isFormFieldVisible(field, values) {
+  if (!field?.visibility?.fieldKey) return true;
+  const dependency = values[field.visibility.fieldKey];
+  if (field.visibility.mode === 'equals') return String(dependency ?? '').trim() === String(field.visibility.expectedValue || '');
+  if (typeof dependency === 'boolean') return dependency === true;
+  return String(dependency ?? '').trim() !== '';
+}
+
+function normalizeSubmissionValues(form, values) {
+  const source = values && typeof values === 'object' ? values : {};
+  const normalized = {};
+  for (const field of form.fields) {
+    const rawValue = source[field.key];
+    if (!isFormFieldVisible(field, { ...source, ...normalized })) {
+      normalized[field.key] = field.type === 'checkbox' ? false : '';
+      continue;
+    }
+    normalized[field.key] = validateSubmissionValue(field, rawValue);
+  }
+  return normalized;
+}
+
+function normalizeSubmissionStatus(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  return FORM_SUBMISSION_STATUSES.has(normalized) ? normalized : 'submitted';
+}
+
+function normalizeFormSubmissionRecord(row, form) {
+  const values = parseJsonObject(row.values_json, {});
+  return {
+    id: row.id,
+    formId: row.form_id,
+    formSlug: form.slug,
+    submitter: {
+      id: row.submitter_user_id || null,
+      name: row.submitter_name || row.submitter_email,
+      email: row.submitter_email
+    },
+    status: normalizeSubmissionStatus(row.status),
+    notes: row.notes || '',
+    values: form.fields
+      .filter((field) => field.type !== 'divider')
+      .map((field) => ({
+        key: field.key,
+        label: field.label,
+        type: field.type,
+        value: values[field.key] ?? (field.type === 'checkbox' ? false : ''),
+        visibility: field.visibility || null
+      })),
+    reviewedBy: row.reviewer_email ? {
+      id: row.reviewed_by_user_id || null,
+      name: row.reviewer_name || row.reviewer_email,
+      email: row.reviewer_email
+    } : null,
+    reviewedAt: row.reviewed_at || '',
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function listFormSubmissions(form, user) {
+  const rows = db.prepare(`
+    SELECT
+      s.*,
+      reviewer.name AS reviewer_name,
+      reviewer.email AS reviewer_email
+    FROM form_submissions s
+    LEFT JOIN users reviewer ON reviewer.id = s.reviewed_by_user_id
+    WHERE s.form_id = ?
+    ORDER BY s.created_at DESC, s.id DESC
+  `).all(form.id);
+
+  return rows
+    .filter((row) => canEvaluateForm(user, form) || Number(row.submitter_user_id) === Number(user.id))
+    .map((row) => normalizeFormSubmissionRecord(row, form));
+}
+
+function handleGetPublicForm(res, url, user) {
+  const form = getFormBySlug(url.searchParams.get('slug'));
+  if (!form || form.status !== 'active') return sendJson(res, 404, { error: 'Form not found.' });
+  if (!canViewForm(user, form)) return sendJson(res, 403, { error: 'You do not have access to this form.' });
+  sendJson(res, 200, {
+    ...form,
+    actions: {
+      canManage: canManageForm(user, form),
+      canView: canViewForm(user, form),
+      canEvaluate: canEvaluateForm(user, form),
+      canSubmit: canSubmitForm(user, form)
+    }
+  });
+}
+
+async function handleSubmitForm(req, res, user) {
+  const payload = await readJson(req);
+  const form = getFormBySlug(payload.slug);
+  if (!form || form.status !== 'active') return sendJson(res, 404, { error: 'Form not found.' });
+  if (!canSubmitForm(user, form)) return sendJson(res, 403, { error: 'You do not have permission to submit this form.' });
+  const values = normalizeSubmissionValues(form, payload.values);
+  const result = db.prepare(`
+    INSERT INTO form_submissions (form_id, submitter_user_id, submitter_name, submitter_email, values_json, status, updated_at)
+    VALUES (?, ?, ?, ?, ?, 'submitted', CURRENT_TIMESTAMP)
+  `).run(form.id, user.id, user.name, user.email, JSON.stringify(values));
+  sendJson(res, 200, { ok: true, submissionId: result.lastInsertRowid });
+}
+
+function handleGetFormSubmissions(res, url, user) {
+  const form = getFormBySlug(url.searchParams.get('slug'));
+  if (!form || form.status !== 'active') return sendJson(res, 404, { error: 'Form not found.' });
+  if (!canViewForm(user, form)) return sendJson(res, 403, { error: 'You do not have access to this form.' });
+  sendJson(res, 200, {
+    form: {
+      id: form.id,
+      slug: form.slug,
+      title: form.title
+    },
+    canEvaluate: canEvaluateForm(user, form),
+    submissions: listFormSubmissions(form, user)
+  });
+}
+
+async function handleReviewFormSubmission(req, res, user) {
+  const payload = await readJson(req);
+  const submissionId = Number(payload.submissionId);
+  if (!Number.isInteger(submissionId) || submissionId <= 0) return sendJson(res, 400, { error: 'Submission not found.' });
+  const row = db.prepare('SELECT form_id FROM form_submissions WHERE id = ?').get(submissionId);
+  if (!row) return sendJson(res, 404, { error: 'Submission not found.' });
+  const form = getFormById(row.form_id);
+  if (!form) return sendJson(res, 404, { error: 'Form not found.' });
+  if (!canEvaluateForm(user, form)) return sendJson(res, 403, { error: 'You do not have permission to review this submission.' });
+  const status = normalizeSubmissionStatus(payload.status);
+  const notes = String(payload.notes || '').trim();
+  db.prepare(`
+    UPDATE form_submissions
+    SET status = ?, notes = ?, reviewed_by_user_id = ?, reviewed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(status, notes, user.id, submissionId);
+  sendJson(res, 200, { ok: true });
 }
 
 function parseMenuLinks(value) {
