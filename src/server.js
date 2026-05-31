@@ -1180,8 +1180,8 @@ function renderProfileDialog(user, locale) {
         <button class="button" type="button" data-profile-close>${t(locale, 'close')}</button>
       </div>
       <div class="profile-shortcuts">
-        ${canManageCms(user) ? `<a class="button ghost profile-shortcut" href="/cms-studio">📄 ${tf(locale, 'cmsStudio', 'CMS Studio')}</a>` : ''}
         ${user.is_admin ? `<a class="button ghost profile-shortcut" href="/admin">${t(locale, 'admin')}</a>` : ''}
+        ${canManageCms(user) ? `<a class="button ghost profile-shortcut" href="/cms-studio">📄 ${tf(locale, 'cmsStudio', 'CMS Studio')}</a>` : ''}
         <button class="button ghost profile-shortcut profile-theme-toggle" type="button" data-theme-toggle>
           <span>${tf(locale, 'theme', 'Theme')}</span>
           <span class="theme-toggle inline-theme-toggle" aria-hidden="true"><span></span></span>
