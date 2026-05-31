@@ -898,17 +898,12 @@ function renderTopbar(user, locale, currentHref = '/') {
       </div>
       <nav class="top-links">${links.map((link) => renderTopbarLink(link, currentHref)).join('')}</nav>
       <div class="top-actions">
-        ${canManageCms(user) ? `<a class="button ghost" href="/cms-studio">${tf(locale, 'cmsStudio', 'CMS Studio')}</a>` : ''}
-        ${user.is_admin ? `<a class="button ghost" href="/admin">${t(locale, 'admin')}</a>` : ''}
-        <button class="theme-toggle" type="button" data-theme-toggle aria-label="Toggle theme"><span></span></button>
         <button class="button user-menu-trigger" type="button" data-profile-open>👤 ${escapeHtml(user.name)}</button>
-        <form action="/api/logout" method="post"><button class="button" type="submit">${t(locale, 'logout')}</button></form>
       </div>
     </header>
     ${renderProfileDialog(user, locale)}
   `;
 }
-
 function renderTopbarLink(link, currentHref) {
   if (Array.isArray(link.children) && link.children.length) {
     const active = link.children.some((child) => isNavActive(currentHref, child.href));
@@ -1180,8 +1175,19 @@ function renderCmsEmptyState(locale, canEdit = false) {
 function renderProfileDialog(user, locale) {
   return `
     <div class="profile-popover" data-profile-popover hidden>
-      <form class="profile-form" data-profile-form>
+      <div class="profile-popover-head">
         <h2>${t(locale, 'profileTitle')}</h2>
+        <button class="button" type="button" data-profile-close>${t(locale, 'close')}</button>
+      </div>
+      <div class="profile-shortcuts">
+        ${canManageCms(user) ? `<a class="button ghost profile-shortcut" href="/cms-studio">📄 ${tf(locale, 'cmsStudio', 'CMS Studio')}</a>` : ''}
+        ${user.is_admin ? `<a class="button ghost profile-shortcut" href="/admin">${t(locale, 'admin')}</a>` : ''}
+        <button class="button ghost profile-shortcut profile-theme-toggle" type="button" data-theme-toggle>
+          <span>${tf(locale, 'theme', 'Theme')}</span>
+          <span class="theme-toggle inline-theme-toggle" aria-hidden="true"><span></span></span>
+        </button>
+      </div>
+      <form class="profile-form" data-profile-form>
         <label>${t(locale, 'name')} <input name="name" value="${escapeHtml(user.name)}" required></label>
         <label>${t(locale, 'email')} <input name="email" type="email" value="${escapeHtml(user.email)}" required></label>
         <label>${t(locale, 'language')} ${renderLanguageSelect(user.language || '', locale)}</label>
@@ -1189,9 +1195,14 @@ function renderProfileDialog(user, locale) {
           <span>${t(locale, 'groups')}</span>
           <div>${renderRolePills(user.roles) || `<span class="hint">${t(locale, 'noGroups')}</span>`}</div>
         </div>
-        <button class="button" type="button" data-password-open>${t(locale, 'changePassword')}</button>
-        <div class="modal-actions"><button class="button" type="button" data-profile-close>${t(locale, 'close')}</button><button class="button primary" type="submit">${t(locale, 'save')}</button></div>
+        <div class="modal-actions"><button class="button primary" type="submit">${t(locale, 'save')}</button></div>
       </form>
+      <div class="profile-secondary-actions">
+        <button class="button" type="button" data-password-open>${t(locale, 'changePassword')}</button>
+        <form class="profile-logout-form" action="/api/logout" method="post">
+          <button class="button" type="submit">🚪 ${t(locale, 'logout')}</button>
+        </form>
+      </div>
     </div>
     <div class="modal-backdrop password-modal" data-password-modal hidden>
       <div class="modal">
@@ -1233,7 +1244,6 @@ function renderPolicy(policy, locale, user) {
     </article>
   `;
 }
-
 function renderPolicyAdminActions(policy, locale) {
   const pageHref = `/admin?tab=content&page=${encodeURIComponent(policy.slug)}`;
   const actions = [
@@ -3373,3 +3383,4 @@ function formatDisplayDate(value, locale = 'en') {
     return date.toISOString().slice(0, 10);
   }
 }
+

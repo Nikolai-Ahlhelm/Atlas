@@ -1225,9 +1225,10 @@ dd {
 
 .profile-popover {
   position: fixed;
-  top: 72px;
+  top: auto;
+  margin-top: 24px;
   right: 24px;
-  z-index: 25;
+  z-index: 99;
   width: min(380px, calc(100vw - 28px));
   padding: 20px;
   border: 1px solid var(--line);
@@ -1237,6 +1238,50 @@ dd {
   backdrop-filter: blur(24px) saturate(145%);
 }
 
+.profile-popover-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.profile-popover-head h2,
+.profile-form h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.profile-shortcuts,
+.profile-secondary-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.profile-shortcuts {
+  margin-bottom: 16px;
+}
+
+.profile-secondary-actions {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.profile-shortcut,
+.profile-secondary-actions .button,
+.profile-logout-form .button {
+  width: 100%;
+  justify-content: space-between;
+}
+
+.profile-theme-toggle {
+  align-items: center;
+}
+
+.inline-theme-toggle {
+  pointer-events: none;
+}
 .password-modal[hidden],
 .profile-popover[hidden] {
   display: none;
@@ -2012,6 +2057,9 @@ textarea {
   backdrop-filter: blur(20px) saturate(140%);
 }
 
+.profile-logout-form {
+  margin: 0;
+}
 .hint {
   margin: 0;
   color: var(--muted);
@@ -2046,6 +2094,11 @@ textarea {
   justify-content: flex-end;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+.logout-form {
+  padding: 14px;
+  margin: 14px;
 }
 
 fieldset {
@@ -2282,3 +2335,4 @@ fieldset {
     font-size: calc(clamp(16px, 4vw, 32px) * var(--font-scale));
   }
 }
+
