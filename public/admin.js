@@ -2,13 +2,7 @@
   let users = [];
   let roles = [];
   let plugins = [];
-  let contentTree = [];
-  let contentDirectories = [];
-  let downloadTree = [];
-  let downloadDirectories = [];
   let formsTree = [];
-  let currentContentSelection = null;
-  let currentDownloadSelection = null;
   let currentFormSelection = null;
   let formDraftFields = [];
   let expandedFormFieldKeys = new Set();
@@ -35,20 +29,12 @@
     });
     document.querySelector('[data-new-user]')?.addEventListener('click', () => openUserDialog());
     document.querySelector('[data-new-role]')?.addEventListener('click', () => openRoleDialog());
-    document.querySelector('[data-new-page]')?.addEventListener('click', () => openPageCreateDialog());
-    document.querySelector('[data-new-category]')?.addEventListener('click', () => openCategoryCreateDialog());
-    document.querySelector('[data-new-download]')?.addEventListener('click', () => openDownloadCreateDialog());
     document.querySelector('[data-new-form]')?.addEventListener('click', () => openFormCreateDialog());
     document.querySelectorAll('[data-admin-tab]').forEach((button) => {
       button.addEventListener('click', () => setActiveTab(button.dataset.adminTab || 'content'));
     });
     document.querySelector('#settingsForm')?.addEventListener('submit', saveSettings);
-    document.querySelector('#pageEditorForm')?.addEventListener('submit', savePageContent);
-    document.querySelector('#categoryEditorForm')?.addEventListener('submit', saveCategoryContent);
-    document.querySelector('#downloadEditorForm')?.addEventListener('submit', saveDownloadContent);
     document.querySelector('#formEditorForm')?.addEventListener('submit', saveFormContent);
-    document.querySelector('#downloadEditorForm input[name="file_upload"]')?.addEventListener('change', handleDownloadUploadSelect);
-    document.querySelector('#deleteDownloadButton')?.addEventListener('click', deleteCurrentDownload);
     document.querySelector('#deleteFormButton')?.addEventListener('click', deleteCurrentForm);
     document.querySelector('[data-add-form-field]')?.addEventListener('click', () => openFieldDialog());
     document.querySelector('[data-add-divider-field]')?.addEventListener('click', () => openFieldDialog({ type: 'divider' }));
@@ -82,68 +68,25 @@
   async function refresh() {
     try {
       clearAdminError();
-      const [userRows, roleRows, pluginRows, contentResponse, downloadResponse, formsResponse] = await Promise.all([
+      const [userRows, roleRows, pluginRows, formsResponse] = await Promise.all([
         fetchJson('/api/admin/users'),
         fetchJson('/api/admin/roles'),
         fetchJson('/api/admin/plugins'),
-        fetchJson('/api/admin/content/tree'),
-        fetchJson('/api/admin/downloads/tree'),
         fetchJson('/api/admin/forms')
       ]);
       users = Array.isArray(userRows) ? userRows : [];
       roles = Array.isArray(roleRows) ? roleRows : [];
       plugins = Array.isArray(pluginRows) ? pluginRows : [];
-      contentTree = Array.isArray(contentResponse?.tree) ? contentResponse.tree : [];
-      contentDirectories = Array.isArray(contentResponse?.directories) ? contentResponse.directories : [];
-      downloadTree = Array.isArray(downloadResponse?.tree) ? downloadResponse.tree : [];
-      downloadDirectories = Array.isArray(downloadResponse?.directories) ? downloadResponse.directories : [];
       formsTree = Array.isArray(formsResponse?.tree) ? formsResponse.tree : [];
       renderPlugins();
       renderUsers();
       renderRoles();
-      renderContentTree();
-      renderDownloadTree();
       renderFormsTree();
       renderAdminTabs();
-      await restoreContentSelection();
-      await restoreDownloadSelection();
       await restoreFormSelection();
     } catch (error) {
       renderAdminError(error);
     }
-  }
-
-  async function restoreContentSelection() {
-    if (!currentContentSelection) {
-      const params = new URLSearchParams(location.search);
-      const page = params.get('page');
-      const dir = params.get('dir');
-      if (page) {
-        await loadPage(page);
-        return;
-      }
-      if (dir !== null) {
-        await loadCategory(dir);
-      }
-      return;
-    }
-    if (currentContentSelection.type === 'page') {
-      await loadPage(currentContentSelection.slug);
-      return;
-    }
-    if (currentContentSelection.type === 'category') {
-      await loadCategory(currentContentSelection.relativeDir);
-    }
-  }
-
-  async function restoreDownloadSelection() {
-    if (!currentDownloadSelection) {
-      const params = new URLSearchParams(location.search);
-      const fileId = params.get('download');
-      if (fileId) await loadDownloadFile(fileId);
-      return;
-    }
-    await loadDownloadFile(currentDownloadSelection.id);
   }
 
   async function restoreFormSelection() {
@@ -275,18 +218,6 @@
     }));
   }
 
-  function renderDownloadTree() {
-    const target = document.querySelector('#downloadsTree');
-    if (!target) return;
-    target.innerHTML = downloadTree.length
-      ? `<div class="content-tree-list">${downloadTree.map((node) => renderDownloadNode(node)).join('')}</div>`
-      : `<div class="notice">${msg('noFiles', 'No files available yet.')}</div>`;
-
-    target.querySelectorAll('[data-open-download]').forEach((button) => button.addEventListener('click', async () => {
-      await loadDownloadFile(button.dataset.openDownload);
-    }));
-  }
-
   function renderFormsTree() {
     const target = document.querySelector('#formsTree');
     if (!target) return;
@@ -318,28 +249,6 @@
           <span class="content-tree-label">${esc(node.label || 'Category')}</span>
         </button>
         <div class="content-tree-children">${(node.children || []).map((child) => renderTreeNode(child)).join('')}</div>
-      </section>
-    `;
-  }
-
-  function renderDownloadNode(node) {
-    if (node.type === 'file') {
-      const active = Number(currentDownloadSelection?.id) === Number(node.id);
-      return `
-        <button class="content-tree-item ${active ? 'active' : ''}" type="button" data-open-download="${esc(node.id)}">
-          <span class="content-tree-kind">FILE</span>
-          <span class="content-tree-label">${esc(node.relativePath || node.name)}</span>
-        </button>
-      `;
-    }
-
-    return `
-      <section class="content-tree-group">
-        <div class="content-tree-item content-tree-category">
-          <span class="content-tree-kind">DIR</span>
-          <span class="content-tree-label">${esc(node.relativeDir || node.label || 'Folder')}</span>
-        </div>
-        <div class="content-tree-children">${(node.children || []).map((child) => renderDownloadNode(child)).join('')}</div>
       </section>
     `;
   }
@@ -401,35 +310,6 @@
       form.elements.label.value = category.label || '';
       form.elements.position.value = Number.isFinite(Number(category.position)) ? Number(category.position) : 999;
       form.elements.roles.value = (category.roles || []).join(', ');
-    } catch (error) {
-      showError(error);
-    }
-  }
-
-  async function loadDownloadFile(id) {
-    try {
-      const file = await fetchJson(`/api/admin/downloads/file?id=${encodeURIComponent(id)}`);
-      setActiveTab('downloads');
-      currentDownloadSelection = { id: file.id };
-      syncAdminUrl();
-      renderDownloadTree();
-      document.querySelector('#downloadEditorTitle').textContent = `${msg('downloadEditor', 'Download editor')}: ${file.relativePath || file.name}`;
-      document.querySelector('#downloadEditorEmpty').hidden = true;
-      const form = document.querySelector('#downloadEditorForm');
-      form.hidden = false;
-      form.elements.id.value = file.id || '';
-      form.elements.name.value = file.name || '';
-      form.elements.relative_dir.value = file.relativeDir || '';
-      form.elements.mime_type.value = file.mimeType || '';
-      form.elements.roles.value = Array.isArray(file.roles) ? file.roles.join(', ') : '';
-      form.elements.description.value = file.description || '';
-      form.elements.tags.value = Array.isArray(file.tags) ? file.tags.join(', ') : '';
-      form.elements.encoding.value = file.isText ? 'text' : 'binary';
-      form.elements.content_text.value = file.isText ? (file.contentText || '') : '';
-      form.elements.content_text.disabled = !file.isText;
-      form.elements.file_upload.value = '';
-      form.elements.content_base64.value = '';
-      document.querySelector('#deleteDownloadButton').hidden = false;
     } catch (error) {
       showError(error);
     }
@@ -645,33 +525,6 @@
     }
   }
 
-  async function saveDownloadContent(event) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    try {
-      await fetchJson('/api/admin/downloads/file', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          id: form.get('id') || undefined,
-          name: form.get('name'),
-          relative_dir: form.get('relative_dir'),
-          mime_type: form.get('mime_type'),
-          roles: parseRoles(form.get('roles')),
-          description: form.get('description'),
-          tags: parseCsv(form.get('tags')),
-          encoding: form.get('encoding'),
-          content_text: form.get('content_text'),
-          content_base64: form.get('content_base64')
-        })
-      });
-      await refresh();
-      if (form.get('id')) await loadDownloadFile(String(form.get('id')));
-    } catch (error) {
-      showError(error);
-    }
-  }
-
   async function saveFormContent(event) {
     event.preventDefault();
     const form = event.currentTarget;
@@ -693,41 +546,6 @@
       });
       await refresh();
       if (result?.slug) await loadForm(result.slug);
-    } catch (error) {
-      showError(error);
-    }
-  }
-
-  async function handleDownloadUploadSelect(event) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    const form = document.querySelector('#downloadEditorForm');
-    form.elements.name.value = form.elements.name.value || file.name;
-    form.elements.mime_type.value = file.type || form.elements.mime_type.value || 'application/octet-stream';
-
-    if (looksLikeTextFile(file)) {
-      form.elements.encoding.value = 'text';
-      form.elements.content_text.disabled = false;
-      form.elements.content_text.value = await file.text();
-      form.elements.content_base64.value = '';
-      return;
-    }
-
-    form.elements.encoding.value = 'binary';
-    form.elements.content_text.disabled = true;
-    form.elements.content_text.value = msg('binaryFileHint', 'Binary file selected. Use upload replacement to update the file.');
-    form.elements.content_base64.value = await readFileAsBase64(file);
-  }
-
-  async function deleteCurrentDownload() {
-    const id = document.querySelector('#downloadEditorForm')?.elements.id.value;
-    if (!id || !confirm(msg('deleteFileConfirm', 'Delete this file?'))) return;
-    try {
-      await fetchJson(`/api/admin/downloads/file/${id}`, { method: 'DELETE' });
-      currentDownloadSelection = null;
-      document.querySelector('#downloadEditorForm').hidden = true;
-      document.querySelector('#downloadEditorEmpty').hidden = false;
-      await refresh();
     } catch (error) {
       showError(error);
     }
@@ -838,57 +656,6 @@
         dialog.remove();
         await refresh();
         if (result?.relativeDir !== undefined) await loadCategory(result.relativeDir);
-      } catch (error) {
-        showError(error);
-      }
-    });
-  }
-
-  function openDownloadCreateDialog() {
-    const dialog = modal(`
-      <form class="modal-form">
-        <h2>${msg('uploadFile', 'Upload file')}</h2>
-        <label>${msg('folderPath', 'Folder path')}
-          <select name="relative_dir">${renderDownloadDirectoryOptions()}</select>
-        </label>
-        <label>${msg('fileName', 'File name')} <input name="name" placeholder="handbook.pdf" required></label>
-        <label>${msg('description', 'Description')} <textarea name="description"></textarea></label>
-        <label>${msg('tagsCsv', 'Tags (comma separated)')} <input name="tags" placeholder="handbook, hr"></label>
-        <label>${msg('rolesCsv', 'Roles (comma separated)')} <input name="roles" placeholder="Admins, Users"></label>
-        <label>${msg('uploadFile', 'Upload file')} <input name="file" type="file" required></label>
-        <div class="modal-actions"><button class="button" type="button" data-close>${msg('cancel', 'Cancel')}</button><button class="button primary" type="submit">${msg('create', 'Create')}</button></div>
-      </form>
-    `);
-
-    dialog.querySelector('form').addEventListener('submit', async (event) => {
-      event.preventDefault();
-      const form = new FormData(event.currentTarget);
-      const file = form.get('file');
-      if (!(file instanceof File) || !file.name) {
-        alert(msg('uploadFileRequired', 'Please choose a file to upload.'));
-        return;
-      }
-      try {
-        const isText = looksLikeTextFile(file);
-        const payload = {
-          name: form.get('name') || file.name,
-          relative_dir: form.get('relative_dir'),
-          description: form.get('description'),
-          tags: parseCsv(form.get('tags')),
-          roles: parseRoles(form.get('roles')),
-          mime_type: file.type || 'application/octet-stream',
-          encoding: isText ? 'text' : 'binary',
-          content_text: isText ? await file.text() : '',
-          content_base64: isText ? '' : await readFileAsBase64(file)
-        };
-        const result = await fetchJson('/api/admin/downloads/file', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        dialog.remove();
-        await refresh();
-        if (result?.id) await loadDownloadFile(result.id);
       } catch (error) {
         showError(error);
       }
@@ -1212,8 +979,10 @@
     currentFormSelection = null;
     formDraftFields = [];
     expandedFormFieldKeys = new Set();
-    document.querySelector('#formEditorForm').hidden = true;
-    document.querySelector('#formEditorEmpty').hidden = false;
+    const editor = document.querySelector('#formEditorForm');
+    const empty = document.querySelector('#formEditorEmpty');
+    if (editor) editor.hidden = true;
+    if (empty) empty.hidden = false;
     updateFormsAdminLayout();
     syncAdminUrl();
   }
@@ -1249,36 +1018,15 @@
       .join('');
   }
 
-  function renderDownloadDirectoryOptions() {
-    return downloadDirectories
-      .map((directory) => {
-        const value = directory.relativeDir || '';
-        const label = directory.relativeDir ? directory.relativeDir : msg('downloadRoot', 'Download root');
-        return `<option value="${esc(value)}">${esc(label)}</option>`;
-      })
-      .join('');
-  }
-
   function hydrateAdminStateFromUrl() {
     const params = new URLSearchParams(location.search);
     activeAdminTab = normalizeAdminTab(params.get('tab'));
-    const page = params.get('page');
-    const dir = params.get('dir');
-    const download = params.get('download');
     const form = params.get('form');
-    if (page) {
-      currentContentSelection = { type: 'page', slug: page };
-    } else if (dir !== null && dir !== '') {
-      currentContentSelection = { type: 'category', relativeDir: dir };
-    } else if (dir === '') {
-      currentContentSelection = { type: 'category', relativeDir: '' };
-    }
-    if (download) currentDownloadSelection = { id: Number(download) || download };
     if (form) currentFormSelection = { slug: form };
   }
 
   function normalizeAdminTab(value) {
-    return ['plugins', 'forms', 'content', 'downloads', 'access', 'instance'].includes(value) ? value : 'content';
+    return ['plugins', 'forms', 'content', 'access', 'instance'].includes(value) ? value : 'content';
   }
 
   function setActiveTab(tab) {
@@ -1300,19 +1048,7 @@
   function syncAdminUrl() {
     const params = new URLSearchParams(location.search);
     params.set('tab', activeAdminTab);
-    params.delete('page');
-    params.delete('dir');
-    params.delete('download');
     params.delete('form');
-    if (currentContentSelection?.type === 'page') {
-      params.set('page', currentContentSelection.slug);
-    }
-    if (currentContentSelection?.type === 'category') {
-      params.set('dir', currentContentSelection.relativeDir || '');
-    }
-    if (currentDownloadSelection?.id) {
-      params.set('download', currentDownloadSelection.id);
-    }
     if (currentFormSelection?.slug) {
       params.set('form', currentFormSelection.slug);
     }
@@ -1381,23 +1117,6 @@
       .split(/[,\n]/)
       .map((item) => item.trim())
       .filter(Boolean);
-  }
-
-  function looksLikeTextFile(file) {
-    if (file.type.startsWith('text/')) return true;
-    return /\.(md|markdown|txt|json|js|mjs|cjs|css|html|xml|csv|tsv|svg)$/i.test(file.name);
-  }
-
-  function readFileAsBase64(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.addEventListener('load', () => {
-        const value = String(reader.result || '');
-        resolve(value.includes(',') ? value.split(',')[1] : value);
-      });
-      reader.addEventListener('error', () => reject(reader.error || new Error('Failed to read file.')));
-      reader.readAsDataURL(file);
-    });
   }
 
   function syncSwitchLabels() {

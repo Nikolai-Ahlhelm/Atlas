@@ -1,0 +1,6 @@
+{
+  "key": "forms",
+  "name": "Forms",
+  "version": "0.1.0",
+  "description": "Configurable request and workflow forms with per-form access, submissions and evaluation."
+}
