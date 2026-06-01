@@ -1,0 +1,32 @@
+{
+  "code": "en",
+  "feature": {
+    "label": "Blog",
+    "description": "Markdown-based news and update feed with visual cards and article hero images."
+  },
+  "ui": {
+    "blog": "Blog",
+    "blogStudio": "Blog Studio",
+    "blogStudioText": "Create and edit Markdown blog posts, including cover image URLs and article metadata.",
+    "latestStories": "Latest stories from Atlas",
+    "latestStoriesText": "Share updates, release notes, internal announcements and team insights in a format that works both in the browser and directly from Markdown files.",
+    "posts": "Posts",
+    "latest": "Latest",
+    "editing": "Editing",
+    "openStudio": "Open studio",
+    "markdownBased": "Markdown based",
+    "featuredPost": "Featured post",
+    "editorialTeam": "Editorial team",
+    "editPost": "Edit post",
+    "noBlogPosts": "No blog posts yet",
+    "noBlogPostsEditorText": "Open Blog Studio to create the first article and publish it as Markdown.",
+    "noBlogPostsText": "No articles have been published yet. Please check back soon.",
+    "openBlog": "Open blog",
+    "selectPost": "Select a blog post",
+    "selectPostText": "Use the list on the left or create a new post to start writing.",
+    "blogFeatureDisabled": "The blog feature is currently disabled.",
+    "blogEditorRequired": "Blog editor permissions are required.",
+    "blogEditorApiRequired": "Blog editor permissions required.",
+    "blogWriteStoryHere": "Write your story here."
+  }
+}

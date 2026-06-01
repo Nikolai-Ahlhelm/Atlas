@@ -1,0 +1,32 @@
+{
+  "code": "zh",
+  "feature": {
+    "label": "博客",
+    "description": "基于 Markdown 的新闻和更新流，带有可视化卡片和文章头图。"
+  },
+  "ui": {
+    "blog": "博客",
+    "blogStudio": "博客工作室",
+    "blogStudioText": "创建和编辑 Markdown 博客文章，包括封面图 URL 和文章元数据。",
+    "latestStories": "Atlas 最新文章",
+    "latestStoriesText": "以一种既适用于浏览器也适用于直接来自 Markdown 文件的格式分享更新、发布说明、内部公告和团队洞察。",
+    "posts": "文章",
+    "latest": "最新",
+    "editing": "编辑",
+    "openStudio": "打开工作室",
+    "markdownBased": "基于 Markdown",
+    "featuredPost": "精选文章",
+    "editorialTeam": "编辑团队",
+    "editPost": "编辑文章",
+    "noBlogPosts": "还没有博客文章",
+    "noBlogPostsEditorText": "打开博客工作室以创建第一篇文章并将其作为 Markdown 发布。",
+    "noBlogPostsText": "尚未发布任何文章。请稍后再来查看。",
+    "openBlog": "打开博客",
+    "selectPost": "选择博客文章",
+    "selectPostText": "使用左侧列表，或创建一篇新文章开始写作。",
+    "blogFeatureDisabled": "博客功能当前已禁用。",
+    "blogEditorRequired": "需要博客编辑权限。",
+    "blogEditorApiRequired": "需要博客编辑权限。",
+    "blogWriteStoryHere": "在这里写下你的故事。"
+  }
+}

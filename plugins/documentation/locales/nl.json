@@ -1,0 +1,20 @@
+{
+  "code": "nl",
+  "feature": {
+    "label": "Documentatie",
+    "description": "Op Markdown gebaseerde kennisbank met categorieën, rechten en bewerking via het web."
+  },
+  "ui": {
+    "policies": "Documentatie",
+    "documentationFeatureDisabled": "De documentatiefunctie is momenteel uitgeschakeld.",
+    "contentEditor": "Editor",
+    "selectContentEntry": "Selecteer een pagina of categorie",
+    "selectContentEntryText": "Beheerders kunnen hier ruwe Markdown bewerken en nieuwe inhoud maken zonder een bestandseditor te openen.",
+    "documentationEmptyStateText": "Maak een pagina of categorie om te beginnen.",
+    "createPageTitlePlaceholder": "Nieuwe pagina",
+    "documentationRawPlaceholder": "Optioneel. Laat leeg om een startsjabloon te genereren.",
+    "createCategoryTitlePlaceholder": "Nieuwe categorie",
+    "categoryIndexTitlePlaceholder": "Categorieoverzicht",
+    "documentationIndexRawPlaceholder": "Optionele startinhoud voor de indexpagina."
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "code": "nl",
+  "feature": {
+    "label": "Downloadcentrum",
+    "description": "Op rechten gebaseerde bestandsverkenner met tags, beschrijvingen en bewerking in de browser."
+  },
+  "ui": {
+    "downloadCenter": "Downloadcentrum",
+    "downloadCenterFeatureDisabled": "Het downloadcentrum is momenteel uitgeschakeld.",
+    "sharedFiles": "Gedeelde bestanden",
+    "sharedFilesText": "Blader door rolgebaseerde bestanden, bekijk beschrijvingen en tags en download de versie die aan jou is toegewezen.",
+    "fileExplorer": "Bestandsverkenner",
+    "readOnly": "Alleen-lezen",
+    "loadingFiles": "Bestanden laden",
+    "loadingFilesText": "Het downloadcentrum laadt de nieuwste mappenstructuur voor je.",
+    "downloadEditor": "Downloadeditor",
+    "selectDownloadEntry": "Selecteer een bestand",
+    "selectDownloadEntryText": "Upload bestanden, wijs rollen toe, bewerk beschrijvingen en werk tekstbestanden direct in de browser bij.",
+    "downloadRoot": "Downloadhoofdmap",
+    "downloadLoadFilesFailed": "Bestanden konden niet worden geladen.",
+    "downloadLoadDetailsFailed": "Bestandsdetails konden niet worden geladen."
+  }
+}

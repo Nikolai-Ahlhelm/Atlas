@@ -19,6 +19,8 @@ const COOKIE_NAME = 'atlas_session';
 const PACKAGE_JSON = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
 let localesCache = null;
 let localesCacheSignature = '';
+let pluginLocalesCache = null;
+let pluginLocalesCacheSignature = '';
 const FONT_FAMILIES = {
   manrope: '"Manrope", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif',
   jakarta: '"Plus Jakarta Sans", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif',
@@ -130,6 +132,7 @@ async function loadPlugins() {
         rootDir,
         manifest,
         publicDir: plugin.publicDir || join(rootDir, 'public'),
+        localesDir: plugin.localesDir || join(rootDir, 'locales'),
         adminPage: plugin.adminPage || null
       });
     } catch (error) {
@@ -244,15 +247,15 @@ async function route(req, res) {
   if (url.pathname === '/api/me') return sendJson(res, 200, publicUser(user));
   if (url.pathname === '/api/profile' && req.method === 'GET') return sendJson(res, 200, publicUser(user));
   if (url.pathname === '/api/profile' && req.method === 'POST') return handleUpdateProfile(req, res, user);
-  if (url.pathname === '/api/plugins' && req.method === 'GET') return sendJson(res, 200, listPlugins());
+  if (url.pathname === '/api/plugins' && req.method === 'GET') return sendJson(res, 200, listPlugins(locale));
   if (url.pathname === '/api/admin/users' && req.method === 'GET') return requireAdmin(user, res, () => sendJson(res, 200, listUsers()));
   if (url.pathname === '/api/admin/users' && req.method === 'POST') return requireAdmin(user, res, () => handleUpsertUser(req, res));
   if (url.pathname.startsWith('/api/admin/users/') && req.method === 'DELETE') return requireAdmin(user, res, () => handleDeleteUser(res, url.pathname));
   if (url.pathname === '/api/admin/roles' && req.method === 'GET') return requireAdmin(user, res, () => sendJson(res, 200, listRoles()));
   if (url.pathname === '/api/admin/roles' && req.method === 'POST') return requireAdmin(user, res, () => handleUpsertRole(req, res));
   if (url.pathname.startsWith('/api/admin/roles/') && req.method === 'DELETE') return requireAdmin(user, res, () => handleDeleteRole(res, url.pathname));
-  if (url.pathname === '/api/admin/plugins' && req.method === 'GET') return requireAdmin(user, res, () => sendJson(res, 200, listPlugins()));
-  if (url.pathname === '/api/admin/plugins' && req.method === 'POST') return requireAdmin(user, res, () => handleUpdatePlugin(req, res));
+  if (url.pathname === '/api/admin/plugins' && req.method === 'GET') return requireAdmin(user, res, () => sendJson(res, 200, listPlugins(locale)));
+  if (url.pathname === '/api/admin/plugins' && req.method === 'POST') return requireAdmin(user, res, () => handleUpdatePlugin(req, res, locale));
   if (url.pathname === '/api/admin/settings' && req.method === 'GET') return requireAdmin(user, res, () => sendJson(res, 200, getSettings()));
   if (url.pathname === '/api/admin/settings' && req.method === 'POST') return requireAdmin(user, res, () => handleUpdateSettings(req, res));
   if (url.pathname === '/api/cms/studio/tree' && req.method === 'GET') return requireCmsEditor(user, res, () => sendJson(res, 200, getCmsStudioTree()));
@@ -957,7 +960,7 @@ function isNavActive(currentHref, href) {
 
 function renderFeatureHub({ user, locale, notice = '' }) {
   const settings = getSettings();
-  const activePlugins = listPlugins().filter((plugin) => plugin.enabled);
+  const activePlugins = listPlugins(locale).filter((plugin) => plugin.enabled);
   const body = `
     <div class="app-shell">
       ${renderTopbar(user, locale, '/')}
@@ -1434,8 +1437,8 @@ function renderAdminTabsNav(locale, { mode = 'buttons', activeTab = '', activePl
         <div class="admin-plugin-menu-list">
           ${pluginAdminPages.map((plugin) => `
             <a class="admin-plugin-menu-link ${plugin.key === activePluginKey ? 'active' : ''}" href="${escapeHtml(plugin.adminPage.href)}">
-              <strong>${escapeHtml(plugin.adminPage.label)}</strong>
-              <span>${escapeHtml(plugin.feature.description)}</span>
+              <strong>${escapeHtml(getPluginFeatureCopy(plugin.key, locale, plugin.feature).label)}</strong>
+              <span>${escapeHtml(getPluginFeatureCopy(plugin.key, locale, plugin.feature).description)}</span>
             </a>
           `).join('')}
         </div>
@@ -1483,7 +1486,7 @@ function renderLogin(req, user, locale) {
   return renderShell({ title: t(locale, 'login'), body, settings, locale });
 }
 
-function renderShell({ title, body, admin = false, settings = getSettings(), locale = 'en', scripts = [] }) {
+function renderShell({ title, body, admin = false, settings = getSettings(), locale = 'en', scripts = [], pluginKeys = [] }) {
   const lightThemeColor = sanitizeColor(settings.light_theme_color || settings.theme_color, DEFAULT_SETTINGS.light_theme_color);
   const darkThemeColor = sanitizeColor(settings.dark_theme_color, DEFAULT_SETTINGS.dark_theme_color);
   const lightBgColor = sanitizeColor(settings.light_bg_color, DEFAULT_SETTINGS.light_bg_color);
@@ -1517,7 +1520,7 @@ function renderShell({ title, body, admin = false, settings = getSettings(), loc
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>${escapeHtml(title)} · ${escapeHtml(settings.app_name)}</title>
         <link rel="stylesheet" href="${cssUrl}">
-        <script id="portal-i18n" type="application/json">${JSON.stringify(getClientI18n(locale)).replace(/</g, '\\u003c')}</script>
+        <script id="portal-i18n" type="application/json">${JSON.stringify(getClientI18n(locale, pluginKeys)).replace(/</g, '\\u003c')}</script>
         <script defer src="${appJsUrl}"></script>
         ${extraScripts}
         ${adminScript}
@@ -2069,13 +2072,18 @@ function listRoles() {
   return db.prepare('SELECT id, name, description, color FROM roles ORDER BY name').all();
 }
 
-function listPlugins() {
+function listPlugins(locale = DEFAULT_SETTINGS.default_language) {
   const rows = db.prepare('SELECT key, enabled FROM plugins').all();
   const enabledByKey = new Map(rows.map((row) => [row.key, Boolean(row.enabled)]));
-  return Object.values(FEATURE_DEFINITIONS).map((feature) => ({
-    ...feature,
-    enabled: enabledByKey.has(feature.key) ? enabledByKey.get(feature.key) : feature.defaultEnabled
-  }));
+  return Object.values(FEATURE_DEFINITIONS).map((feature) => {
+    const localized = getPluginFeatureCopy(feature.key, locale, feature);
+    return {
+      ...feature,
+      label: localized.label,
+      description: localized.description,
+      enabled: enabledByKey.has(feature.key) ? enabledByKey.get(feature.key) : feature.defaultEnabled
+    };
+  });
 }
 
 function isPluginEnabled(key) {
@@ -2090,13 +2098,13 @@ function requirePlugin(key, res, callback) {
   return callback();
 }
 
-async function handleUpdatePlugin(req, res) {
+async function handleUpdatePlugin(req, res, locale = DEFAULT_SETTINGS.default_language) {
   const payload = await readJson(req);
   const key = String(payload.key || '').trim();
   if (!FEATURE_DEFINITIONS[key]) return sendJson(res, 404, { error: 'Plugin not found.' });
   const enabled = payload.enabled === true;
   db.prepare('INSERT INTO plugins (key, enabled) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET enabled = excluded.enabled').run(key, enabled ? 1 : 0);
-  sendJson(res, 200, { ok: true, plugins: listPlugins() });
+  sendJson(res, 200, { ok: true, plugins: listPlugins(locale) });
 }
 
 function getSettings() {
@@ -2718,6 +2726,53 @@ function getLocalesSignature() {
   }
 }
 
+function loadPluginLocales() {
+  const bundles = {};
+  for (const plugin of loadedPlugins) {
+    const localesDir = plugin.localesDir;
+    const pluginBundle = {};
+    if (existsSync(localesDir)) {
+      for (const file of readdirSync(localesDir).filter((name) => name.endsWith('.json'))) {
+        try {
+          const parsed = JSON.parse(readFileSync(join(localesDir, file), 'utf8'));
+          const code = String(parsed.code || file.replace(/\.json$/i, '')).toLowerCase();
+          if (!code) continue;
+          pluginBundle[code] = {
+            code,
+            ui: parsed.ui && typeof parsed.ui === 'object' ? parsed.ui : {},
+            feature: parsed.feature && typeof parsed.feature === 'object' ? parsed.feature : {}
+          };
+        } catch (error) {
+          logWarn(`Skipping invalid plugin locale file ${plugin.key}/${file}`, error instanceof Error ? error.message : String(error));
+        }
+      }
+    }
+    bundles[plugin.key] = pluginBundle;
+  }
+  return bundles;
+}
+
+function getPluginLocalesSignature() {
+  try {
+    return loadedPlugins.map((plugin) => {
+      if (!existsSync(plugin.localesDir)) return `${plugin.key}:missing`;
+      const parts = readdirSync(plugin.localesDir)
+        .filter((name) => name.endsWith('.json'))
+        .map((name) => {
+          const filePath = join(plugin.localesDir, name);
+          const stats = statSync(filePath);
+          return `${name}:${stats.mtimeMs}:${stats.size}`;
+        })
+        .sort()
+        .join('|');
+      return `${plugin.key}:${parts}`;
+    }).sort().join('||');
+  } catch (error) {
+    logWarn('Failed to inspect plugin locale directories', error instanceof Error ? error.message : String(error));
+    return 'error';
+  }
+}
+
 function getLocales() {
   const signature = getLocalesSignature();
   if (!localesCache || signature !== localesCacheSignature) {
@@ -2726,6 +2781,16 @@ function getLocales() {
     logInfo(`Loaded locales: ${Object.keys(localesCache).sort().join(', ')}`);
   }
   return localesCache;
+}
+
+function getPluginLocales() {
+  const signature = getPluginLocalesSignature();
+  if (!pluginLocalesCache || signature !== pluginLocalesCacheSignature) {
+    pluginLocalesCache = loadPluginLocales();
+    pluginLocalesCacheSignature = signature;
+    logInfo(`Loaded plugin locales: ${loadedPlugins.map((plugin) => `${plugin.key}(${Object.keys(pluginLocalesCache[plugin.key] || {}).sort().join(',') || 'none'})`).join(', ')}`);
+  }
+  return pluginLocalesCache;
 }
 
 function getAvailableLanguages() {
@@ -2769,8 +2834,44 @@ function tf(locale, key, fallback) {
   return value === key ? fallback : value;
 }
 
-function getClientI18n(locale) {
+function tp(pluginKey, locale, key) {
+  const pluginLocales = getPluginLocales();
+  const bundle = pluginLocales[String(pluginKey || '')] || {};
+  const active = bundle[locale]?.ui || {};
+  const fallback = bundle[DEFAULT_SETTINGS.default_language]?.ui || bundle.en?.ui || {};
+  return active[key] || fallback[key] || key;
+}
+
+function tpf(pluginKey, locale, key, fallback) {
+  const value = tp(pluginKey, locale, key);
+  return value === key ? fallback : value;
+}
+
+function getPluginFeatureCopy(pluginKey, locale, fallback = {}) {
+  const pluginLocales = getPluginLocales();
+  const bundle = pluginLocales[String(pluginKey || '')] || {};
+  const active = bundle[locale]?.feature || {};
+  const fallbackFeature = bundle[DEFAULT_SETTINGS.default_language]?.feature || bundle.en?.feature || {};
+  return {
+    label: active.label || fallbackFeature.label || fallback.label || pluginKey,
+    description: active.description || fallbackFeature.description || fallback.description || ''
+  };
+}
+
+function getClientI18n(locale, pluginKeys = []) {
   const locales = getLocales();
+  const uniquePluginKeys = Array.from(new Set((Array.isArray(pluginKeys) ? pluginKeys : []).filter(Boolean)));
+  const pluginMessages = Object.fromEntries(uniquePluginKeys.map((pluginKey) => {
+    const messages = {
+      ...(getPluginLocales()[pluginKey]?.[DEFAULT_SETTINGS.default_language]?.ui || getPluginLocales()[pluginKey]?.en?.ui || {}),
+      ...(getPluginLocales()[pluginKey]?.[locale]?.ui || {})
+    };
+    return [pluginKey, {
+      messages,
+      feature: getPluginFeatureCopy(pluginKey, locale)
+    }];
+  }));
+  const mergedPluginMessages = Object.assign({}, ...Object.values(pluginMessages).map((entry) => entry.messages || {}));
   return {
     locale,
     languages: getAvailableLanguages().map((item) => ({
@@ -2780,8 +2881,10 @@ function getClientI18n(locale) {
     })),
     messages: {
       ...(locales[DEFAULT_SETTINGS.default_language]?.ui || locales.en?.ui || {}),
-      ...(locales[locale]?.ui || {})
-    }
+      ...(locales[locale]?.ui || {}),
+      ...mergedPluginMessages
+    },
+    plugins: pluginMessages
   };
 }
 
@@ -3287,6 +3390,16 @@ function mimeForPath(filePath) {
 }
 
 function buildPluginContext(extra = {}) {
+  const pluginKey = extra.plugin?.key || '';
+  const pluginT = (locale, key) => {
+    if (!pluginKey) return t(locale, key);
+    const pluginValue = tp(pluginKey, locale, key);
+    return pluginValue === key ? t(locale, key) : pluginValue;
+  };
+  const pluginTf = (locale, key, fallback) => {
+    const value = pluginT(locale, key);
+    return value === key ? fallback : value;
+  };
   return {
     db,
     ROOT,
@@ -3321,8 +3434,11 @@ function buildPluginContext(extra = {}) {
     renderToc,
     escapeHtml,
     escapeAttribute,
-    tf,
-    t,
+    tf: pluginTf,
+    t: pluginT,
+    tp,
+    tpf,
+    getPluginFeatureCopy,
     assetUrl,
     pluginAssetUrl,
     slugify,

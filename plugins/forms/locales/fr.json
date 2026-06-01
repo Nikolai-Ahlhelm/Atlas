@@ -1,0 +1,41 @@
+{
+  "code": "fr",
+  "feature": {
+    "label": "Formulaires",
+    "description": "Formulaires configurables de demande et de workflow avec accès par formulaire, envois et révision."
+  },
+  "ui": {
+    "forms": "Formulaires",
+    "formsFeatureDisabled": "Cette fonctionnalité est actuellement désactivée.",
+    "formsFeatureDisabledNotice": "La fonctionnalité de formulaires est actuellement désactivée.",
+    "workflowForms": "Formulaires de workflow",
+    "workflowFormsText": "Soumettez des demandes structurées, examinez les soumissions entrantes et gardez les accès alignés sur les bonnes personnes et groupes.",
+    "structuredForms": "Formulaires structurés",
+    "perFormAccess": "Accès par formulaire",
+    "loadingForms": "Chargement des formulaires",
+    "loadingFormsText": "Atlas récupère les formulaires auxquels vous pouvez accéder.",
+    "formEditor": "Éditeur de formulaires",
+    "formSubmitSuccess": "Votre soumission a été enregistrée.",
+    "manageFormHint": "Peut modifier la structure, l’accès et le statut. Le créateur conserve toujours l’accès.",
+    "evaluateFormHint": "Peut consulter les soumissions et enregistrer des notes ou décisions.",
+    "viewFormHint": "Peut ouvrir le formulaire sans forcément le soumettre ni l’évaluer.",
+    "noForms": "Aucun formulaire n’est encore disponible pour vous.",
+    "noFormsText": "Demandez à un administrateur de vous accorder l’accès à un formulaire ou d’activer le plugin de formulaires.",
+    "noFieldsYet": "Aucun champ pour le moment. Ajoutez le premier champ pour commencer à créer ce formulaire.",
+    "noSubmissions": "Aucune soumission pour le moment.",
+    "mySubmissions": "Mes soumissions",
+    "submitForm": "Soumettre le formulaire",
+    "selectForm": "Sélectionnez un formulaire",
+    "selectFormText": "Créez des formulaires de demande et de workflow, définissez les champs et configurez qui peut les voir, les envoyer ou les examiner.",
+    "introText": "Texte d’introduction",
+    "formBuilderSections": "Sections du générateur de formulaires",
+    "fields": "Champs",
+    "permissions": "Autorisations",
+    "addSectionDivider": "Ajouter un séparateur de section",
+    "archived": "Archivé",
+    "formsDescriptionPlaceholder": "Collectez des demandes d’accès, de compte ou de workflow.",
+    "formsDefaultIntroText": "Veuillez compléter les informations requises avant d’envoyer le formulaire.",
+    "formsDefaultRequestTitle": "Titre de la demande",
+    "formsDefaultDetails": "Détails"
+  }
+}

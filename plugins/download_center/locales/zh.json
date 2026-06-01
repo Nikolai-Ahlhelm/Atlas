@@ -1,0 +1,23 @@
+{
+  "code": "zh",
+  "feature": {
+    "label": "下载中心",
+    "description": "基于权限的文件浏览器，带有标签、描述和浏览器内编辑功能。"
+  },
+  "ui": {
+    "downloadCenter": "下载中心",
+    "downloadCenterFeatureDisabled": "下载中心当前已禁用。",
+    "sharedFiles": "共享文件",
+    "sharedFilesText": "浏览基于角色的文件，查看说明和标签，并下载分配给你的版本。",
+    "fileExplorer": "文件浏览器",
+    "readOnly": "只读",
+    "loadingFiles": "正在加载文件",
+    "loadingFilesText": "下载中心正在为你加载最新的目录树。",
+    "downloadEditor": "下载编辑器",
+    "selectDownloadEntry": "选择文件",
+    "selectDownloadEntryText": "上传文件、分配角色、编辑说明，并直接在浏览器中更新文本文件。",
+    "downloadRoot": "下载根目录",
+    "downloadLoadFilesFailed": "无法加载文件。",
+    "downloadLoadDetailsFailed": "无法加载文件详情。"
+  }
+}

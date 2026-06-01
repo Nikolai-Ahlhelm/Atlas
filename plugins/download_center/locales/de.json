@@ -1,0 +1,23 @@
+{
+  "code": "de",
+  "feature": {
+    "label": "Download Center",
+    "description": "Berechtigungsbasierter Datei-Explorer mit Tags, Beschreibungen und Bearbeitung im Browser."
+  },
+  "ui": {
+    "downloadCenter": "Download Center",
+    "downloadCenterFeatureDisabled": "Das Download Center ist derzeit deaktiviert.",
+    "sharedFiles": "Geteilte Dateien",
+    "sharedFilesText": "Durchsuche rollenbasierte Dateien, prüfe Beschreibungen und Tags und lade die Version herunter, die dir zugewiesen ist.",
+    "fileExplorer": "Datei-Explorer",
+    "readOnly": "Nur lesen",
+    "loadingFiles": "Dateien werden geladen",
+    "loadingFilesText": "Das Download Center lädt den aktuellen Verzeichnisbaum für dich.",
+    "downloadEditor": "Download-Editor",
+    "selectDownloadEntry": "Wähle eine Datei",
+    "selectDownloadEntryText": "Lade Dateien hoch, weise Rollen zu, bearbeite Beschreibungen und aktualisiere textbasierte Dateien direkt im Browser.",
+    "downloadRoot": "Download-Stammordner",
+    "downloadLoadFilesFailed": "Dateien konnten nicht geladen werden.",
+    "downloadLoadDetailsFailed": "Dateidetails konnten nicht geladen werden."
+  }
+}

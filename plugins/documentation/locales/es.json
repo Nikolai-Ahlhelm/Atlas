@@ -1,0 +1,20 @@
+{
+  "code": "es",
+  "feature": {
+    "label": "Documentación",
+    "description": "Base de conocimiento basada en Markdown con categorías, permisos y edición web."
+  },
+  "ui": {
+    "policies": "Documentación",
+    "documentationFeatureDisabled": "La función de documentación está desactivada actualmente.",
+    "contentEditor": "Editor",
+    "selectContentEntry": "Selecciona una página o categoría",
+    "selectContentEntryText": "Los administradores pueden editar Markdown sin procesar aquí y crear contenido nuevo sin abrir un editor de archivos.",
+    "documentationEmptyStateText": "Crea una página o categoría para empezar.",
+    "createPageTitlePlaceholder": "Nueva página",
+    "documentationRawPlaceholder": "Opcional. Déjalo vacío para generar una plantilla inicial.",
+    "createCategoryTitlePlaceholder": "Nueva categoría",
+    "categoryIndexTitlePlaceholder": "Resumen de la categoría",
+    "documentationIndexRawPlaceholder": "Contenido inicial opcional para la página de índice."
+  }
+}

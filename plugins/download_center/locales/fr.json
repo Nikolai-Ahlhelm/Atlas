@@ -1,0 +1,23 @@
+{
+  "code": "fr",
+  "feature": {
+    "label": "Centre de téléchargement",
+    "description": "Explorateur de fichiers basé sur les autorisations avec étiquettes, descriptions et édition dans le navigateur."
+  },
+  "ui": {
+    "downloadCenter": "Centre de téléchargement",
+    "downloadCenterFeatureDisabled": "Le centre de téléchargement est actuellement désactivé.",
+    "sharedFiles": "Fichiers partagés",
+    "sharedFilesText": "Parcourez des fichiers basés sur les rôles, consultez les descriptions et les étiquettes et téléchargez la version qui vous est attribuée.",
+    "fileExplorer": "Explorateur de fichiers",
+    "readOnly": "Lecture seule",
+    "loadingFiles": "Chargement des fichiers",
+    "loadingFilesText": "Le centre de téléchargement charge pour vous l’arborescence la plus récente.",
+    "downloadEditor": "Éditeur de téléchargements",
+    "selectDownloadEntry": "Sélectionnez un fichier",
+    "selectDownloadEntryText": "Téléversez des fichiers, attribuez des rôles, modifiez les descriptions et mettez à jour les fichiers texte directement dans le navigateur.",
+    "downloadRoot": "Racine des téléchargements",
+    "downloadLoadFilesFailed": "Échec du chargement des fichiers.",
+    "downloadLoadDetailsFailed": "Échec du chargement des détails du fichier."
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "code": "zh",
+  "feature": {
+    "label": "文档",
+    "description": "基于 Markdown 的知识库，具有分类、权限和网页编辑功能。"
+  },
+  "ui": {
+    "policies": "文档",
+    "documentationFeatureDisabled": "文档功能当前已禁用。",
+    "contentEditor": "编辑器",
+    "selectContentEntry": "选择页面或分类",
+    "selectContentEntryText": "管理员可以在这里编辑原始 Markdown，并在不打开文件编辑器的情况下创建新内容。",
+    "documentationEmptyStateText": "创建页面或分类以开始使用。",
+    "createPageTitlePlaceholder": "新页面",
+    "documentationRawPlaceholder": "可选。留空以生成起始模板。",
+    "createCategoryTitlePlaceholder": "新分类",
+    "categoryIndexTitlePlaceholder": "分类概览",
+    "documentationIndexRawPlaceholder": "索引页的可选起始内容。"
+  }
+}

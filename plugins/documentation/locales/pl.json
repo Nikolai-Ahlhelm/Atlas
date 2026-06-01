@@ -1,0 +1,20 @@
+{
+  "code": "pl",
+  "feature": {
+    "label": "Dokumentacja",
+    "description": "Baza wiedzy oparta na Markdownie z kategoriami, uprawnieniami i edycją przez WWW."
+  },
+  "ui": {
+    "policies": "Dokumentacja",
+    "documentationFeatureDisabled": "Funkcja dokumentacji jest obecnie wyłączona.",
+    "contentEditor": "Edytor",
+    "selectContentEntry": "Wybierz stronę lub kategorię",
+    "selectContentEntryText": "Administratorzy mogą tutaj edytować surowy Markdown i tworzyć nowe treści bez otwierania edytora plików.",
+    "documentationEmptyStateText": "Utwórz stronę lub kategorię, aby rozpocząć.",
+    "createPageTitlePlaceholder": "Nowa strona",
+    "documentationRawPlaceholder": "Opcjonalnie. Pozostaw puste, aby wygenerować szablon startowy.",
+    "createCategoryTitlePlaceholder": "Nowa kategoria",
+    "categoryIndexTitlePlaceholder": "Przegląd kategorii",
+    "documentationIndexRawPlaceholder": "Opcjonalna treść początkowa dla strony indeksu."
+  }
+}

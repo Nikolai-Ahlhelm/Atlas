@@ -1,0 +1,41 @@
+{
+  "code": "sv",
+  "feature": {
+    "label": "Formulär",
+    "description": "Konfigurerbara begärande- och arbetsflödesformulär med åtkomst per formulär, inskick och granskning."
+  },
+  "ui": {
+    "forms": "Formulär",
+    "formsFeatureDisabled": "Den här funktionen är för närvarande inaktiverad.",
+    "formsFeatureDisabledNotice": "Formulärfunktionen är för närvarande inaktiverad.",
+    "workflowForms": "Arbetsflödesformulär",
+    "workflowFormsText": "Skicka strukturerade förfrågningar, granska inkommande inskick och håll åtkomsten anpassad till rätt personer och grupper.",
+    "structuredForms": "Strukturerade formulär",
+    "perFormAccess": "Åtkomst per formulär",
+    "loadingForms": "Laddar formulär",
+    "loadingFormsText": "Atlas hämtar formulären som du kan komma åt.",
+    "formEditor": "Formulärredigerare",
+    "formSubmitSuccess": "Ditt inskick har sparats.",
+    "manageFormHint": "Kan redigera struktur, åtkomst och status. Skaparen behåller alltid åtkomst.",
+    "evaluateFormHint": "Kan granska inskick och spara anteckningar eller beslut.",
+    "viewFormHint": "Kan öppna formuläret utan att nödvändigtvis skicka eller granska det.",
+    "noForms": "Det finns inga formulär tillgängliga för dig ännu.",
+    "noFormsText": "Be en administratör att ge dig åtkomst till ett formulär eller aktivera formulärpluginet.",
+    "noFieldsYet": "Inga fält ännu. Lägg till det första fältet för att börja bygga formuläret.",
+    "noSubmissions": "Inga inskick ännu.",
+    "mySubmissions": "Mina inskick",
+    "submitForm": "Skicka formulär",
+    "selectForm": "Välj ett formulär",
+    "selectFormText": "Skapa begärande- och arbetsflödesformulär, definiera fält och konfigurera vem som får visa, skicka in eller granska dem.",
+    "introText": "Introduktionstext",
+    "formBuilderSections": "Avsnitt i formulärbyggaren",
+    "fields": "Fält",
+    "permissions": "Behörigheter",
+    "addSectionDivider": "Lägg till avsnittsdelare",
+    "archived": "Arkiverad",
+    "formsDescriptionPlaceholder": "Samla in åtkomst-, konto- eller arbetsflödesbegäranden.",
+    "formsDefaultIntroText": "Fyll i den obligatoriska informationen innan du skickar formuläret.",
+    "formsDefaultRequestTitle": "Begäranderubrik",
+    "formsDefaultDetails": "Detaljer"
+  }
+}

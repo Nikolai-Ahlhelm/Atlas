@@ -1,0 +1,32 @@
+{
+  "code": "sv",
+  "feature": {
+    "label": "Blogg",
+    "description": "Markdown-baserat nyhets- och uppdateringsflöde med visuella kort och hero-bilder för artiklar."
+  },
+  "ui": {
+    "blog": "Blogg",
+    "blogStudio": "Bloggstudio",
+    "blogStudioText": "Skapa och redigera blogginlägg i Markdown, inklusive omslagsbilds-URL:er och artikelmetadata.",
+    "latestStories": "Senaste inläggen från Atlas",
+    "latestStoriesText": "Dela uppdateringar, versionsanteckningar, interna meddelanden och insikter från teamet i ett format som fungerar både i webbläsaren och direkt från Markdown-filer.",
+    "posts": "Inlägg",
+    "latest": "Senaste",
+    "editing": "Redigering",
+    "openStudio": "Öppna studio",
+    "markdownBased": "Markdown-baserat",
+    "featuredPost": "Utvalt inlägg",
+    "editorialTeam": "Redaktionsteam",
+    "editPost": "Redigera inlägg",
+    "noBlogPosts": "Inga blogginlägg ännu",
+    "noBlogPostsEditorText": "Öppna Bloggstudio för att skapa den första artikeln och publicera den som Markdown.",
+    "noBlogPostsText": "Inga artiklar har publicerats ännu. Kom tillbaka snart.",
+    "openBlog": "Öppna blogg",
+    "selectPost": "Välj ett blogginlägg",
+    "selectPostText": "Använd listan till vänster eller skapa ett nytt inlägg för att börja skriva.",
+    "blogFeatureDisabled": "Bloggfunktionen är för närvarande inaktiverad.",
+    "blogEditorRequired": "Behörighet för bloggredigeraren krävs.",
+    "blogEditorApiRequired": "Behörighet för bloggredigeraren krävs.",
+    "blogWriteStoryHere": "Skriv din berättelse här."
+  }
+}

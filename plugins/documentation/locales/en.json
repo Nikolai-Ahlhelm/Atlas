@@ -1,0 +1,20 @@
+{
+  "code": "en",
+  "feature": {
+    "label": "Documentation",
+    "description": "Markdown-based knowledge base with categories, permissions and web editing."
+  },
+  "ui": {
+    "policies": "Documentation",
+    "documentationFeatureDisabled": "The documentation feature is currently disabled.",
+    "contentEditor": "Editor",
+    "selectContentEntry": "Select a page or category",
+    "selectContentEntryText": "Admins can edit raw Markdown here and create new content without opening a file editor.",
+    "documentationEmptyStateText": "Create a page or category to get started.",
+    "createPageTitlePlaceholder": "New page",
+    "documentationRawPlaceholder": "Optional. Leave empty to generate a starter template.",
+    "createCategoryTitlePlaceholder": "New category",
+    "categoryIndexTitlePlaceholder": "Category overview",
+    "documentationIndexRawPlaceholder": "Optional start content for the index page."
+  }
+}

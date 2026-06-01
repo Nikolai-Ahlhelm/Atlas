@@ -1,0 +1,41 @@
+{
+  "code": "pt",
+  "feature": {
+    "label": "Formulários",
+    "description": "Formulários configuráveis de solicitação e fluxo de trabalho com acesso por formulário, envios e revisão."
+  },
+  "ui": {
+    "forms": "Formulários",
+    "formsFeatureDisabled": "Esse recurso está desativado no momento.",
+    "formsFeatureDisabledNotice": "O recurso de formulários está desativado no momento.",
+    "workflowForms": "Formulários de fluxo de trabalho",
+    "workflowFormsText": "Envie solicitações estruturadas, revise os envios recebidos e mantenha o acesso alinhado com as pessoas e grupos certos.",
+    "structuredForms": "Formulários estruturados",
+    "perFormAccess": "Acesso por formulário",
+    "loadingForms": "Carregando formulários",
+    "loadingFormsText": "O Atlas está carregando os formulários aos quais você pode acessar.",
+    "formEditor": "Editor de formulários",
+    "formSubmitSuccess": "Seu envio foi salvo.",
+    "manageFormHint": "Pode editar estrutura, acesso e status. O criador sempre mantém o acesso.",
+    "evaluateFormHint": "Pode revisar envios e registrar notas ou decisões.",
+    "viewFormHint": "Pode abrir o formulário sem necessariamente enviá-lo ou avaliá-lo.",
+    "noForms": "Ainda não há formulários disponíveis para você.",
+    "noFormsText": "Peça a um administrador para conceder acesso a um formulário ou ativar o plugin de formulários.",
+    "noFieldsYet": "Ainda não há campos. Adicione o primeiro campo para começar a montar este formulário.",
+    "noSubmissions": "Ainda não há envios.",
+    "mySubmissions": "Meus envios",
+    "submitForm": "Enviar formulário",
+    "selectForm": "Selecione um formulário",
+    "selectFormText": "Crie formulários de solicitação e de fluxo de trabalho, defina campos e configure quem pode visualizá-los, enviá-los ou avaliá-los.",
+    "introText": "Texto introdutório",
+    "formBuilderSections": "Seções do construtor de formulários",
+    "fields": "Campos",
+    "permissions": "Permissões",
+    "addSectionDivider": "Adicionar divisor de seção",
+    "archived": "Arquivado",
+    "formsDescriptionPlaceholder": "Colete solicitações de acesso, conta ou fluxo de trabalho.",
+    "formsDefaultIntroText": "Preencha as informações necessárias antes de enviar o formulário.",
+    "formsDefaultRequestTitle": "Título da solicitação",
+    "formsDefaultDetails": "Detalhes"
+  }
+}

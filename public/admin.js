@@ -68,12 +68,13 @@
   async function refresh() {
     try {
       clearAdminError();
-      const [userRows, roleRows, pluginRows, formsResponse] = await Promise.all([
+      const [userRows, roleRows, pluginRows] = await Promise.all([
         fetchJson('/api/admin/users'),
         fetchJson('/api/admin/roles'),
-        fetchJson('/api/admin/plugins'),
-        fetchJson('/api/admin/forms')
+        fetchJson('/api/admin/plugins')
       ]);
+      const formsFeature = Array.isArray(pluginRows) ? pluginRows.find((plugin) => plugin.key === 'forms') : null;
+      const formsResponse = formsFeature ? await fetchJson('/api/admin/forms') : null;
       users = Array.isArray(userRows) ? userRows : [];
       roles = Array.isArray(roleRows) ? roleRows : [];
       plugins = Array.isArray(pluginRows) ? pluginRows : [];

@@ -1,0 +1,32 @@
+{
+  "code": "it",
+  "feature": {
+    "label": "Blog",
+    "description": "Feed di notizie e aggiornamenti basato su Markdown con schede visive e immagini hero per gli articoli."
+  },
+  "ui": {
+    "blog": "Blog",
+    "blogStudio": "Blog Studio",
+    "blogStudioText": "Crea e modifica post del blog in Markdown, incluse le URL delle immagini di copertina e i metadati degli articoli.",
+    "latestStories": "Ultimi articoli di Atlas",
+    "latestStoriesText": "Condividi aggiornamenti, note di rilascio, annunci interni e approfondimenti del team in un formato che funziona sia nel browser sia direttamente dai file Markdown.",
+    "posts": "Post",
+    "latest": "Più recente",
+    "editing": "Modifica",
+    "openStudio": "Apri studio",
+    "markdownBased": "Basato su Markdown",
+    "featuredPost": "Post in evidenza",
+    "editorialTeam": "Redazione",
+    "editPost": "Modifica post",
+    "noBlogPosts": "Nessun post del blog per ora",
+    "noBlogPostsEditorText": "Apri Blog Studio per creare il primo articolo e pubblicarlo in Markdown.",
+    "noBlogPostsText": "Non è stato ancora pubblicato alcun articolo. Torna presto.",
+    "openBlog": "Apri blog",
+    "selectPost": "Seleziona un post del blog",
+    "selectPostText": "Usa l’elenco a sinistra o crea un nuovo post per iniziare a scrivere.",
+    "blogFeatureDisabled": "La funzione blog è attualmente disattivata.",
+    "blogEditorRequired": "Sono richiesti i permessi dell’editor del blog.",
+    "blogEditorApiRequired": "Permessi dell’editor del blog richiesti.",
+    "blogWriteStoryHere": "Scrivi qui la tua storia."
+  }
+}

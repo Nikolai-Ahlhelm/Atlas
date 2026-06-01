@@ -1,0 +1,41 @@
+{
+  "code": "zh",
+  "feature": {
+    "label": "表单",
+    "description": "可配置的请求和工作流表单，支持按表单访问、提交和审核。"
+  },
+  "ui": {
+    "forms": "表单",
+    "formsFeatureDisabled": "此功能当前已禁用。",
+    "formsFeatureDisabledNotice": "表单功能当前已禁用。",
+    "workflowForms": "工作流表单",
+    "workflowFormsText": "提交结构化请求，审核收到的提交，并确保访问权限与正确的人员和团队保持一致。",
+    "structuredForms": "结构化表单",
+    "perFormAccess": "按表单访问",
+    "loadingForms": "正在加载表单",
+    "loadingFormsText": "Atlas 正在加载您可访问的表单。",
+    "formEditor": "表单编辑器",
+    "formSubmitSuccess": "您的提交已保存。",
+    "manageFormHint": "可以编辑结构、访问权限和状态。创建者始终保留访问权限。",
+    "evaluateFormHint": "可以查看提交并保存审核说明或决定。",
+    "viewFormHint": "可以打开表单，而不一定需要提交或审核。",
+    "noForms": "目前还没有可供您使用的表单。",
+    "noFormsText": "请让管理员为您授予表单访问权限或启用表单插件。",
+    "noFieldsYet": "还没有字段。请添加第一个字段以开始构建此表单。",
+    "noSubmissions": "还没有提交。",
+    "mySubmissions": "我的提交",
+    "submitForm": "提交表单",
+    "selectForm": "选择表单",
+    "selectFormText": "创建请求和工作流表单，定义字段，并配置谁可以查看、提交或审核它们。",
+    "introText": "介绍文本",
+    "formBuilderSections": "表单构建器部分",
+    "fields": "字段",
+    "permissions": "权限",
+    "addSectionDivider": "添加分节线",
+    "archived": "已归档",
+    "formsDescriptionPlaceholder": "收集访问、账户或工作流请求。",
+    "formsDefaultIntroText": "提交表单前请填写所需信息。",
+    "formsDefaultRequestTitle": "请求标题",
+    "formsDefaultDetails": "详细信息"
+  }
+}

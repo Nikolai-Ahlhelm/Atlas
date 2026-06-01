@@ -1,0 +1,20 @@
+{
+  "code": "hi",
+  "feature": {
+    "label": "दस्तावेज़ीकरण",
+    "description": "Markdown आधारित ज्ञानकोश जिसमें श्रेणियाँ, अनुमतियाँ और वेब संपादन शामिल हैं।"
+  },
+  "ui": {
+    "policies": "दस्तावेज़ीकरण",
+    "documentationFeatureDisabled": "डॉक्यूमेंटेशन सुविधा फिलहाल अक्षम है।",
+    "contentEditor": "एडिटर",
+    "selectContentEntry": "एक पेज या श्रेणी चुनें",
+    "selectContentEntryText": "एडमिन यहाँ कच्चा Markdown संपादित कर सकते हैं और फ़ाइल एडिटर खोले बिना नई सामग्री बना सकते हैं।",
+    "documentationEmptyStateText": "शुरू करने के लिए एक पेज या श्रेणी बनाएं।",
+    "createPageTitlePlaceholder": "नया पेज",
+    "documentationRawPlaceholder": "वैकल्पिक। शुरुआती टेम्पलेट बनाने के लिए खाली छोड़ें।",
+    "createCategoryTitlePlaceholder": "नई श्रेणी",
+    "categoryIndexTitlePlaceholder": "श्रेणी अवलोकन",
+    "documentationIndexRawPlaceholder": "इंडेक्स पेज के लिए वैकल्पिक शुरुआती सामग्री।"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "code": "tr",
+  "feature": {
+    "label": "Dokümantasyon",
+    "description": "Kategoriler, izinler ve web düzenleme ile Markdown tabanlı bilgi tabanı."
+  },
+  "ui": {
+    "policies": "Dokümantasyon",
+    "documentationFeatureDisabled": "Dokümantasyon özelliği şu anda devre dışı.",
+    "contentEditor": "Düzenleyici",
+    "selectContentEntry": "Bir sayfa veya kategori seçin",
+    "selectContentEntryText": "Yöneticiler burada ham Markdown düzenleyebilir ve dosya düzenleyici açmadan yeni içerik oluşturabilir.",
+    "documentationEmptyStateText": "Başlamak için bir sayfa veya kategori oluşturun.",
+    "createPageTitlePlaceholder": "Yeni sayfa",
+    "documentationRawPlaceholder": "İsteğe bağlı. Başlangıç şablonu oluşturmak için boş bırakın.",
+    "createCategoryTitlePlaceholder": "Yeni kategori",
+    "categoryIndexTitlePlaceholder": "Kategori özeti",
+    "documentationIndexRawPlaceholder": "Dizin sayfası için isteğe bağlı başlangıç içeriği."
+  }
+}

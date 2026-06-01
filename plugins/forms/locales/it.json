@@ -1,0 +1,41 @@
+{
+  "code": "it",
+  "feature": {
+    "label": "Moduli",
+    "description": "Moduli configurabili di richiesta e workflow con accesso per modulo, invii e revisione."
+  },
+  "ui": {
+    "forms": "Moduli",
+    "formsFeatureDisabled": "Questa funzione è attualmente disattivata.",
+    "formsFeatureDisabledNotice": "La funzione moduli è attualmente disattivata.",
+    "workflowForms": "Moduli di workflow",
+    "workflowFormsText": "Invia richieste strutturate, esamina gli invii in arrivo e mantieni gli accessi allineati alle persone e ai gruppi giusti.",
+    "structuredForms": "Moduli strutturati",
+    "perFormAccess": "Accesso per modulo",
+    "loadingForms": "Caricamento moduli",
+    "loadingFormsText": "Atlas sta caricando i moduli a cui puoi accedere.",
+    "formEditor": "Editor moduli",
+    "formSubmitSuccess": "Il tuo invio è stato salvato.",
+    "manageFormHint": "Può modificare struttura, accesso e stato. Il creatore mantiene sempre l’accesso.",
+    "evaluateFormHint": "Può controllare gli invii e salvare note o decisioni.",
+    "viewFormHint": "Può aprire il modulo senza necessariamente inviarlo o valutarlo.",
+    "noForms": "Non ci sono ancora moduli disponibili per te.",
+    "noFormsText": "Chiedi a un amministratore di concederti l’accesso a un modulo o di attivare il plugin moduli.",
+    "noFieldsYet": "Nessun campo ancora. Aggiungi il primo campo per iniziare a creare questo modulo.",
+    "noSubmissions": "Nessun invio ancora.",
+    "mySubmissions": "I miei invii",
+    "submitForm": "Invia modulo",
+    "selectForm": "Seleziona un modulo",
+    "selectFormText": "Crea moduli di richiesta e di workflow, definisci i campi e configura chi può visualizzarli, inviarli o valutarli.",
+    "introText": "Testo introduttivo",
+    "formBuilderSections": "Sezioni del builder del modulo",
+    "fields": "Campi",
+    "permissions": "Permessi",
+    "addSectionDivider": "Aggiungi separatore di sezione",
+    "archived": "Archiviato",
+    "formsDescriptionPlaceholder": "Raccogli richieste di accesso, account o workflow.",
+    "formsDefaultIntroText": "Completa le informazioni richieste prima di inviare il modulo.",
+    "formsDefaultRequestTitle": "Titolo della richiesta",
+    "formsDefaultDetails": "Dettagli"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "code": "nl",
+  "feature": {
+    "label": "Blog",
+    "description": "Op Markdown gebaseerde nieuws- en updatefeed met visuele kaarten en hero-afbeeldingen voor artikelen."
+  },
+  "ui": {
+    "blog": "Blog",
+    "blogStudio": "Blog Studio",
+    "blogStudioText": "Maak en bewerk blogposts in Markdown, inclusief omslagafbeeldings-URL’s en artikelmetadata.",
+    "latestStories": "Nieuwste verhalen van Atlas",
+    "latestStoriesText": "Deel updates, release-opmerkingen, interne aankondigingen en teaminzichten in een formaat dat zowel in de browser als direct vanuit Markdown-bestanden werkt.",
+    "posts": "Berichten",
+    "latest": "Nieuwste",
+    "editing": "Bewerken",
+    "openStudio": "Studio openen",
+    "markdownBased": "Markdown-gebaseerd",
+    "featuredPost": "Uitgelicht bericht",
+    "editorialTeam": "Redactieteam",
+    "editPost": "Bericht bewerken",
+    "noBlogPosts": "Nog geen blogberichten",
+    "noBlogPostsEditorText": "Open Blog Studio om het eerste artikel te maken en als Markdown te publiceren.",
+    "noBlogPostsText": "Er zijn nog geen artikelen gepubliceerd. Kom binnenkort terug.",
+    "openBlog": "Blog openen",
+    "selectPost": "Selecteer een blogbericht",
+    "selectPostText": "Gebruik de lijst links of maak een nieuw bericht om te beginnen met schrijven.",
+    "blogFeatureDisabled": "De blogfunctie is momenteel uitgeschakeld.",
+    "blogEditorRequired": "Blogeditor-rechten zijn vereist.",
+    "blogEditorApiRequired": "Blogeditor-rechten vereist.",
+    "blogWriteStoryHere": "Schrijf hier je verhaal."
+  }
+}

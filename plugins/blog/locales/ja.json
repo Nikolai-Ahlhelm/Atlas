@@ -1,0 +1,32 @@
+{
+  "code": "ja",
+  "feature": {
+    "label": "ブログ",
+    "description": "視覚的なカードと記事用ヒーロー画像を備えたMarkdownベースのニュースおよび更新フィード。"
+  },
+  "ui": {
+    "blog": "ブログ",
+    "blogStudio": "ブログスタジオ",
+    "blogStudioText": "カバー画像URLや記事メタデータを含むMarkdownブログ記事を作成・編集します。",
+    "latestStories": "Atlasの最新記事",
+    "latestStoriesText": "更新情報、リリースノート、社内告知、チームの知見を、ブラウザでもMarkdownファイルからでも使える形式で共有します。",
+    "posts": "記事",
+    "latest": "最新",
+    "editing": "編集",
+    "openStudio": "スタジオを開く",
+    "markdownBased": "Markdownベース",
+    "featuredPost": "注目の記事",
+    "editorialTeam": "編集チーム",
+    "editPost": "記事を編集",
+    "noBlogPosts": "まだブログ記事はありません",
+    "noBlogPostsEditorText": "ブログスタジオを開いて最初の記事を作成し、Markdownとして公開してください。",
+    "noBlogPostsText": "まだ記事は公開されていません。しばらくしてから再度ご確認ください。",
+    "openBlog": "ブログを開く",
+    "selectPost": "ブログ記事を選択",
+    "selectPostText": "左の一覧を使うか、新しい記事を作成して執筆を始めてください。",
+    "blogFeatureDisabled": "ブログ機能は現在無効です。",
+    "blogEditorRequired": "ブログ編集者の権限が必要です。",
+    "blogEditorApiRequired": "ブログ編集者の権限が必要です。",
+    "blogWriteStoryHere": "ここに記事を書いてください。"
+  }
+}

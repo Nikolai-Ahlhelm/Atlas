@@ -1,0 +1,23 @@
+{
+  "code": "sv",
+  "feature": {
+    "label": "Nedladdningscenter",
+    "description": "Behörighetsbaserad filutforskare med taggar, beskrivningar och redigering i webbläsaren."
+  },
+  "ui": {
+    "downloadCenter": "Nedladdningscenter",
+    "downloadCenterFeatureDisabled": "Nedladdningscentret är för närvarande inaktiverat.",
+    "sharedFiles": "Delade filer",
+    "sharedFilesText": "Bläddra bland rollbaserade filer, granska beskrivningar och taggar och ladda ner den version som är tilldelad dig.",
+    "fileExplorer": "Filutforskare",
+    "readOnly": "Skrivskyddad",
+    "loadingFiles": "Laddar filer",
+    "loadingFilesText": "Nedladdningscentret hämtar den senaste katalogträdet åt dig.",
+    "downloadEditor": "Nedladdningsredigerare",
+    "selectDownloadEntry": "Välj en fil",
+    "selectDownloadEntryText": "Ladda upp filer, tilldela roller, redigera beskrivningar och uppdatera textfiler direkt i webbläsaren.",
+    "downloadRoot": "Rot för nedladdningar",
+    "downloadLoadFilesFailed": "Det gick inte att ladda filer.",
+    "downloadLoadDetailsFailed": "Det gick inte att ladda filinformation."
+  }
+}

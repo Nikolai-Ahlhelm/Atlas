@@ -1,0 +1,23 @@
+{
+  "code": "tr",
+  "feature": {
+    "label": "İndirme Merkezi",
+    "description": "Etiketler, açıklamalar ve tarayıcıda düzenleme ile izin tabanlı dosya gezgini."
+  },
+  "ui": {
+    "downloadCenter": "İndirme Merkezi",
+    "downloadCenterFeatureDisabled": "İndirme merkezi şu anda devre dışı.",
+    "sharedFiles": "Paylaşılan dosyalar",
+    "sharedFilesText": "Rol tabanlı dosyalara göz atın, açıklamaları ve etiketleri inceleyin ve size atanmış sürümü indirin.",
+    "fileExplorer": "Dosya gezgini",
+    "readOnly": "Salt okunur",
+    "loadingFiles": "Dosyalar yükleniyor",
+    "loadingFilesText": "İndirme merkezi sizin için en güncel dizin ağacını yüklüyor.",
+    "downloadEditor": "İndirme düzenleyicisi",
+    "selectDownloadEntry": "Bir dosya seçin",
+    "selectDownloadEntryText": "Dosya yükleyin, roller atayın, açıklamaları düzenleyin ve metin tabanlı dosyaları doğrudan tarayıcıda güncelleyin.",
+    "downloadRoot": "İndirme kökü",
+    "downloadLoadFilesFailed": "Dosyalar yüklenemedi.",
+    "downloadLoadDetailsFailed": "Dosya ayrıntıları yüklenemedi."
+  }
+}

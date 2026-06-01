@@ -43,7 +43,7 @@ export default function createBlogPlugin({ manifest, rootDir }) {
 
       if (url.pathname === '/blog') {
         if (!context.isPluginEnabled(feature.key)) {
-          context.sendHtml(res, 404, context.renderFeatureHub({ user, locale, notice: 'The blog feature is currently disabled.' }));
+          context.sendHtml(res, 404, context.renderFeatureHub({ user, locale, notice: context.tf(locale, 'blogFeatureDisabled', 'The blog feature is currently disabled.') }));
           return true;
         }
         context.sendHtml(res, 200, renderBlogIndexPage(context));
@@ -52,7 +52,7 @@ export default function createBlogPlugin({ manifest, rootDir }) {
 
       if (url.pathname.startsWith('/blog/')) {
         if (!context.isPluginEnabled(feature.key)) {
-          context.sendHtml(res, 404, context.renderFeatureHub({ user, locale, notice: 'The blog feature is currently disabled.' }));
+          context.sendHtml(res, 404, context.renderFeatureHub({ user, locale, notice: context.tf(locale, 'blogFeatureDisabled', 'The blog feature is currently disabled.') }));
           return true;
         }
         const slug = decodeURIComponent(url.pathname.slice('/blog/'.length));
@@ -80,9 +80,9 @@ export default function createBlogPlugin({ manifest, rootDir }) {
   function requireBlogEditor(context, callback) {
     if (!canManageBlog(context.user)) {
       if (context.url.pathname.startsWith('/api/')) {
-        context.sendJson(context.res, 403, { error: 'Blog editor permissions required.' });
+        context.sendJson(context.res, 403, { error: context.tf(context.locale, 'blogEditorApiRequired', 'Blog editor permissions required.') });
       } else {
-        context.sendHtml(context.res, 403, renderBlogIndexPage(context, { notice: 'Blog editor permissions are required.' }));
+        context.sendHtml(context.res, 403, renderBlogIndexPage(context, { notice: context.tf(context.locale, 'blogEditorRequired', 'Blog editor permissions are required.') }));
       }
       return true;
     }
@@ -228,7 +228,7 @@ export default function createBlogPlugin({ manifest, rootDir }) {
         coverImage,
         roles
       },
-      markdown: markdown.trim() || `# ${title}\n\nWrite your story here.\n`
+      markdown: markdown.trim() || `# ${title}\n\n${context.tf(context.locale, 'blogWriteStoryHere', 'Write your story here.')}\n`
     });
     context.writeFileSync(filePath, context.ensureTrailingNewline(raw), 'utf8');
     context.logInfo(`Blog post ${mode === 'create' ? 'created' : 'updated'}: ${slug}`, { file: filePath });
@@ -261,6 +261,7 @@ export default function createBlogPlugin({ manifest, rootDir }) {
 
   function renderBlogIndexPage(context, { notice = '' } = {}) {
     const settings = context.getSettings();
+    const featureCopy = context.getPluginFeatureCopy(feature.key, context.locale, feature);
     const posts = getBlogCatalog(context).posts.filter((post) => canReadBlogPost(context.user, post));
     const featured = posts[0] || null;
     const gridPosts = featured ? posts.slice(1) : posts;
@@ -289,7 +290,7 @@ export default function createBlogPlugin({ manifest, rootDir }) {
         ${context.renderFooter(settings)}
       </div>
     `;
-    return context.renderShell({ title: context.tf(context.locale, 'blog', 'Blog'), body, settings, locale: context.locale });
+    return context.renderShell({ title: featureCopy.label, body, settings, locale: context.locale, pluginKeys: [feature.key] });
   }
 
   function renderFeaturedBlogCard(context, post) {
@@ -375,14 +376,15 @@ export default function createBlogPlugin({ manifest, rootDir }) {
 
   function renderBlogAdminPage(context) {
     const settings = context.getSettings();
+    const featureCopy = context.getPluginFeatureCopy(feature.key, context.locale, feature);
     const body = `
       <div class="app-shell">
         ${context.renderTopbar(context.user, context.locale, '/admin/blog')}
         <main class="admin-page blog-studio-page">
           <div class="admin-header">
             <div>
-              <h1>${context.tf(context.locale, 'blogStudio', 'Blog Studio')}</h1>
-              <p class="hint">${context.tf(context.locale, 'blogStudioText', 'Create and edit Markdown blog posts, including cover image URLs and article metadata.')}</p>
+              <h1>${context.escapeHtml(featureCopy.label)}</h1>
+              <p class="hint">${context.escapeHtml(featureCopy.description)}</p>
             </div>
             <div class="panel-head-actions">
               <a class="button ghost" href="/blog">${context.tf(context.locale, 'openBlog', 'Open blog')}</a>
@@ -439,11 +441,12 @@ export default function createBlogPlugin({ manifest, rootDir }) {
       </div>
     `;
     return context.renderShell({
-      title: context.tf(context.locale, 'blogStudio', 'Blog Studio'),
+      title: featureCopy.label,
       body,
       settings,
       locale: context.locale,
-      scripts: [context.pluginAssetUrl(feature.key, 'admin.js')]
+      scripts: [context.pluginAssetUrl(feature.key, 'admin.js')],
+      pluginKeys: [feature.key]
     });
   }
 }

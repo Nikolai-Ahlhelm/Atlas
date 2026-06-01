@@ -1,0 +1,32 @@
+{
+  "code": "ko",
+  "feature": {
+    "label": "블로그",
+    "description": "시각적 카드와 기사 히어로 이미지를 갖춘 Markdown 기반 뉴스 및 업데이트 피드입니다."
+  },
+  "ui": {
+    "blog": "블로그",
+    "blogStudio": "블로그 스튜디오",
+    "blogStudioText": "커버 이미지 URL과 게시물 메타데이터를 포함한 Markdown 블로그 글을 만들고 편집합니다.",
+    "latestStories": "Atlas의 최신 글",
+    "latestStoriesText": "업데이트, 릴리스 노트, 내부 공지, 팀 인사이트를 브라우저와 Markdown 파일 모두에서 사용할 수 있는 형식으로 공유하세요.",
+    "posts": "게시글",
+    "latest": "최신",
+    "editing": "편집",
+    "openStudio": "스튜디오 열기",
+    "markdownBased": "Markdown 기반",
+    "featuredPost": "추천 게시글",
+    "editorialTeam": "편집팀",
+    "editPost": "게시글 편집",
+    "noBlogPosts": "아직 블로그 게시글이 없습니다",
+    "noBlogPostsEditorText": "블로그 스튜디오를 열어 첫 번째 글을 만들고 Markdown으로 게시하세요.",
+    "noBlogPostsText": "아직 게시된 글이 없습니다. 곧 다시 확인해 주세요.",
+    "openBlog": "블로그 열기",
+    "selectPost": "블로그 게시글 선택",
+    "selectPostText": "왼쪽 목록을 사용하거나 새 게시글을 만들어 글쓰기를 시작하세요.",
+    "blogFeatureDisabled": "블로그 기능이 현재 비활성화되어 있습니다.",
+    "blogEditorRequired": "블로그 편집 권한이 필요합니다.",
+    "blogEditorApiRequired": "블로그 편집 권한이 필요합니다.",
+    "blogWriteStoryHere": "여기에 글을 작성하세요."
+  }
+}

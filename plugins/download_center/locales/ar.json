@@ -1,0 +1,23 @@
+{
+  "code": "ar",
+  "feature": {
+    "label": "مركز التنزيل",
+    "description": "مستعرض ملفات يعتمد على الأذونات مع وسوم وأوصاف وتحرير داخل المتصفح."
+  },
+  "ui": {
+    "downloadCenter": "مركز التنزيل",
+    "downloadCenterFeatureDisabled": "مركز التنزيل معطل حاليًا.",
+    "sharedFiles": "ملفات مشتركة",
+    "sharedFilesText": "تصفح الملفات حسب الأدوار، وراجع الأوصاف والوسوم، ونزل النسخة المخصصة لك.",
+    "fileExplorer": "مستعرض الملفات",
+    "readOnly": "للقراءة فقط",
+    "loadingFiles": "جارٍ تحميل الملفات",
+    "loadingFilesText": "يقوم مركز التنزيل بتحميل أحدث شجرة مجلدات لك.",
+    "downloadEditor": "محرر التنزيل",
+    "selectDownloadEntry": "اختر ملفًا",
+    "selectDownloadEntryText": "ارفع الملفات، وعيّن الأدوار، وعدّل الأوصاف، وحدّث الملفات النصية مباشرة في المتصفح.",
+    "downloadRoot": "جذر التنزيل",
+    "downloadLoadFilesFailed": "تعذر تحميل الملفات.",
+    "downloadLoadDetailsFailed": "تعذر تحميل تفاصيل الملف."
+  }
+}

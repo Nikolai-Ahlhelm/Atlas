@@ -1,0 +1,41 @@
+{
+  "code": "ar",
+  "feature": {
+    "label": "النماذج",
+    "description": "نماذج طلبات وسير عمل قابلة للتخصيص مع وصول لكل نموذج وإرسالات ومراجعة."
+  },
+  "ui": {
+    "forms": "النماذج",
+    "formsFeatureDisabled": "هذه الميزة معطلة حاليًا.",
+    "formsFeatureDisabledNotice": "ميزة النماذج معطلة حاليًا.",
+    "workflowForms": "نماذج سير العمل",
+    "workflowFormsText": "قدّم طلبات منظمة وراجع الإرسالات الواردة وحافظ على توافق الوصول مع الأشخاص والمجموعات المناسبة.",
+    "structuredForms": "نماذج منظمة",
+    "perFormAccess": "وصول لكل نموذج",
+    "loadingForms": "جارٍ تحميل النماذج",
+    "loadingFormsText": "يقوم Atlas بتحميل النماذج التي يمكنك الوصول إليها.",
+    "formEditor": "محرر النماذج",
+    "formSubmitSuccess": "تم حفظ الإرسال.",
+    "manageFormHint": "يمكنه تعديل البنية والوصول والحالة. يحتفظ المنشئ دائمًا بإمكانية الوصول.",
+    "evaluateFormHint": "يمكنه فحص الإرسالات وحفظ الملاحظات أو القرارات.",
+    "viewFormHint": "يمكنه فتح النموذج دون الحاجة إلى إرساله أو مراجعته.",
+    "noForms": "لا توجد نماذج متاحة لك بعد.",
+    "noFormsText": "اطلب من مسؤول منحك الوصول إلى نموذج أو تفعيل إضافة النماذج.",
+    "noFieldsYet": "لا توجد حقول بعد. أضف أول حقل لبدء إنشاء هذا النموذج.",
+    "noSubmissions": "لا توجد إرسالات بعد.",
+    "mySubmissions": "إرسالاتي",
+    "submitForm": "إرسال النموذج",
+    "selectForm": "اختر نموذجًا",
+    "selectFormText": "أنشئ نماذج الطلبات وسير العمل، وحدد الحقول، واضبط من يمكنه عرضها أو إرسالها أو مراجعتها.",
+    "introText": "نص المقدمة",
+    "formBuilderSections": "أقسام منشئ النماذج",
+    "fields": "الحقول",
+    "permissions": "الأذونات",
+    "addSectionDivider": "إضافة فاصل قسم",
+    "archived": "مؤرشف",
+    "formsDescriptionPlaceholder": "اجمع طلبات الوصول أو الحسابات أو سير العمل.",
+    "formsDefaultIntroText": "يرجى إكمال المعلومات المطلوبة قبل إرسال النموذج.",
+    "formsDefaultRequestTitle": "عنوان الطلب",
+    "formsDefaultDetails": "التفاصيل"
+  }
+}

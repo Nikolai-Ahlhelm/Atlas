@@ -85,34 +85,34 @@ export default function createFormsPlugin({ manifest, rootDir }) {
       }
 
       if (url.pathname === '/api/forms' && req.method === 'GET') {
-        if (!context.isPluginEnabled(feature.key)) return context.sendJson(res, 404, { error: 'This feature is currently disabled.' });
+        if (!context.isPluginEnabled(feature.key)) return context.sendJson(res, 404, { error: context.tf(locale, 'formsFeatureDisabled', 'This feature is currently disabled.') });
         context.sendJson(res, 200, listFormsForUser(user));
         return true;
       }
       if (url.pathname === '/api/forms/form' && req.method === 'GET') {
-        if (!context.isPluginEnabled(feature.key)) return context.sendJson(res, 404, { error: 'This feature is currently disabled.' });
+        if (!context.isPluginEnabled(feature.key)) return context.sendJson(res, 404, { error: context.tf(locale, 'formsFeatureDisabled', 'This feature is currently disabled.') });
         handleGetPublicForm(context);
         return true;
       }
       if (url.pathname === '/api/forms/form/submit' && req.method === 'POST') {
-        if (!context.isPluginEnabled(feature.key)) return context.sendJson(res, 404, { error: 'This feature is currently disabled.' });
+        if (!context.isPluginEnabled(feature.key)) return context.sendJson(res, 404, { error: context.tf(locale, 'formsFeatureDisabled', 'This feature is currently disabled.') });
         await handleSubmitForm(context);
         return true;
       }
       if (url.pathname === '/api/forms/submissions' && req.method === 'GET') {
-        if (!context.isPluginEnabled(feature.key)) return context.sendJson(res, 404, { error: 'This feature is currently disabled.' });
+        if (!context.isPluginEnabled(feature.key)) return context.sendJson(res, 404, { error: context.tf(locale, 'formsFeatureDisabled', 'This feature is currently disabled.') });
         handleGetFormSubmissions(context);
         return true;
       }
       if (url.pathname === '/api/forms/submissions/review' && req.method === 'POST') {
-        if (!context.isPluginEnabled(feature.key)) return context.sendJson(res, 404, { error: 'This feature is currently disabled.' });
+        if (!context.isPluginEnabled(feature.key)) return context.sendJson(res, 404, { error: context.tf(locale, 'formsFeatureDisabled', 'This feature is currently disabled.') });
         await handleReviewFormSubmission(context);
         return true;
       }
 
       if (url.pathname === '/forms') {
         if (!context.isPluginEnabled(feature.key)) {
-          context.sendHtml(res, 404, context.renderFeatureHub({ user, locale, notice: 'The forms feature is currently disabled.' }));
+          context.sendHtml(res, 404, context.renderFeatureHub({ user, locale, notice: context.tf(locale, 'formsFeatureDisabledNotice', 'The forms feature is currently disabled.') }));
           return true;
         }
         context.sendHtml(res, 200, renderFormsPage(context));
@@ -132,6 +132,7 @@ export default function createFormsPlugin({ manifest, rootDir }) {
 
   function renderFormsPage(context) {
     const settings = context.getSettings();
+    const featureCopy = context.getPluginFeatureCopy(feature.key, context.locale, feature);
     const body = `
       <div class="app-shell forms-page" data-forms-app>
         ${context.renderTopbar(context.user, context.locale, '/forms')}
@@ -171,24 +172,26 @@ export default function createFormsPlugin({ manifest, rootDir }) {
       </div>
     `;
     return context.renderShell({
-      title: context.tf(context.locale, 'forms', 'Forms'),
+      title: featureCopy.label,
       body,
       settings,
       locale: context.locale,
-      scripts: [context.pluginAssetUrl(feature.key, 'forms.js')]
+      scripts: [context.pluginAssetUrl(feature.key, 'forms.js')],
+      pluginKeys: [feature.key]
     });
   }
 
   function renderFormsAdminPage(context) {
     const settings = context.getSettings();
+    const featureCopy = context.getPluginFeatureCopy(feature.key, context.locale, feature);
     const body = `
       <div class="app-shell">
         ${context.renderTopbar(context.user, context.locale, '/admin/forms')}
         <main class="admin-page" data-forms-admin-page>
           <div class="admin-header">
             <div>
-              <h1>${context.escapeHtml(feature.label)}</h1>
-              <p class="hint">${context.escapeHtml(feature.description)}</p>
+              <h1>${context.escapeHtml(featureCopy.label)}</h1>
+              <p class="hint">${context.escapeHtml(featureCopy.description)}</p>
             </div>
             <a class="button ghost" href="/admin">${context.tf(context.locale, 'admin', 'Admin')}</a>
           </div>
@@ -261,12 +264,13 @@ export default function createFormsPlugin({ manifest, rootDir }) {
       </div>
     `;
     return context.renderShell({
-      title: `${feature.label} Admin`,
+      title: featureCopy.label,
       body,
       admin: false,
       settings,
       locale: context.locale,
-      scripts: [context.pluginAssetUrl(feature.key, 'admin.js')]
+      scripts: [context.pluginAssetUrl(feature.key, 'admin.js')],
+      pluginKeys: [feature.key]
     });
   }
 

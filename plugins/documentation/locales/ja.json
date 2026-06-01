@@ -1,0 +1,20 @@
+{
+  "code": "ja",
+  "feature": {
+    "label": "ドキュメント",
+    "description": "カテゴリ、権限、Web編集を備えたMarkdownベースのナレッジベース。"
+  },
+  "ui": {
+    "policies": "ドキュメント",
+    "documentationFeatureDisabled": "ドキュメント機能は現在無効です。",
+    "contentEditor": "エディター",
+    "selectContentEntry": "ページまたはカテゴリを選択",
+    "selectContentEntryText": "管理者はここで生のMarkdownを編集し、ファイルエディターを開かずに新しいコンテンツを作成できます。",
+    "documentationEmptyStateText": "開始するにはページまたはカテゴリを作成してください。",
+    "createPageTitlePlaceholder": "新しいページ",
+    "documentationRawPlaceholder": "任意。空のままにすると開始テンプレートが生成されます。",
+    "createCategoryTitlePlaceholder": "新しいカテゴリ",
+    "categoryIndexTitlePlaceholder": "カテゴリ概要",
+    "documentationIndexRawPlaceholder": "インデックスページ用の任意の初期コンテンツ。"
+  }
+}

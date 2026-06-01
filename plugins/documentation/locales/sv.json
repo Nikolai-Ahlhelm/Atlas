@@ -1,0 +1,20 @@
+{
+  "code": "sv",
+  "feature": {
+    "label": "Dokumentation",
+    "description": "Markdown-baserad kunskapsbas med kategorier, behörigheter och webbredigering."
+  },
+  "ui": {
+    "policies": "Dokumentation",
+    "documentationFeatureDisabled": "Dokumentationsfunktionen är för närvarande inaktiverad.",
+    "contentEditor": "Redigerare",
+    "selectContentEntry": "Välj en sida eller kategori",
+    "selectContentEntryText": "Administratörer kan redigera rå Markdown här och skapa nytt innehåll utan att öppna en filredigerare.",
+    "documentationEmptyStateText": "Skapa en sida eller kategori för att komma igång.",
+    "createPageTitlePlaceholder": "Ny sida",
+    "documentationRawPlaceholder": "Valfritt. Lämna tomt för att skapa en startmall.",
+    "createCategoryTitlePlaceholder": "Ny kategori",
+    "categoryIndexTitlePlaceholder": "Kategoriöversikt",
+    "documentationIndexRawPlaceholder": "Valfritt startinnehåll för indexsidan."
+  }
+}

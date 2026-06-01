@@ -20,7 +20,7 @@
     try {
       const response = await fetch('/api/downloads/tree');
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed to load files.');
+      if (!response.ok) throw new Error(data.error || msg('downloadLoadFilesFailed', 'Failed to load files.'));
       const tree = Array.isArray(data.tree) ? data.tree : [];
       treeTarget.innerHTML = tree.length
         ? renderDownloadExplorer(tree, activeFileId)
@@ -82,7 +82,7 @@
     const isAdmin = document.querySelector('[data-downloads-app]')?.dataset.isAdmin === 'true';
     const response = await fetch(`/api/downloads/file?id=${encodeURIComponent(id)}`);
     const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Failed to load file details.');
+    if (!response.ok) throw new Error(data.error || msg('downloadLoadDetailsFailed', 'Failed to load file details.'));
     emptyState.hidden = true;
     detailTarget.hidden = false;
     detailTarget.innerHTML = `

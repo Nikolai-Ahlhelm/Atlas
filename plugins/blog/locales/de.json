@@ -1,0 +1,32 @@
+{
+  "code": "de",
+  "feature": {
+    "label": "Blog",
+    "description": "Markdown-basierter News- und Update-Feed mit visuellen Karten und Titelbildern für Artikel."
+  },
+  "ui": {
+    "blog": "Blog",
+    "blogStudio": "Blog Studio",
+    "blogStudioText": "Erstelle und bearbeite Markdown-Blogbeiträge inklusive Titelbild-URLs und Artikel-Metadaten.",
+    "latestStories": "Neueste Beiträge aus Atlas",
+    "latestStoriesText": "Teile Updates, Release Notes, interne Ankündigungen und Team-Einblicke in einem Format, das im Browser und direkt aus Markdown-Dateien funktioniert.",
+    "posts": "Beiträge",
+    "latest": "Neuester",
+    "editing": "Bearbeitung",
+    "openStudio": "Studio öffnen",
+    "markdownBased": "Markdown-basiert",
+    "featuredPost": "Hervorgehobener Beitrag",
+    "editorialTeam": "Redaktionsteam",
+    "editPost": "Beitrag bearbeiten",
+    "noBlogPosts": "Noch keine Blog-Beiträge",
+    "noBlogPostsEditorText": "Öffne Blog Studio, um den ersten Artikel zu erstellen und als Markdown zu veröffentlichen.",
+    "noBlogPostsText": "Es wurden noch keine Artikel veröffentlicht. Bitte schau bald wieder vorbei.",
+    "openBlog": "Blog öffnen",
+    "selectPost": "Wähle einen Blog-Beitrag",
+    "selectPostText": "Nutze die Liste links oder erstelle einen neuen Beitrag, um mit dem Schreiben zu beginnen.",
+    "blogFeatureDisabled": "Die Blog-Funktion ist derzeit deaktiviert.",
+    "blogEditorRequired": "Blog-Studio-Berechtigungen sind erforderlich.",
+    "blogEditorApiRequired": "Blog-Studio-Berechtigungen erforderlich.",
+    "blogWriteStoryHere": "Schreibe hier deine Geschichte."
+  }
+}

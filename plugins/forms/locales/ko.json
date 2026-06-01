@@ -1,0 +1,41 @@
+{
+  "code": "ko",
+  "feature": {
+    "label": "양식",
+    "description": "양식별 접근, 제출 및 검토 기능을 갖춘 구성 가능한 요청 및 워크플로 양식입니다."
+  },
+  "ui": {
+    "forms": "양식",
+    "formsFeatureDisabled": "이 기능은 현재 비활성화되어 있습니다.",
+    "formsFeatureDisabledNotice": "양식 기능이 현재 비활성화되어 있습니다.",
+    "workflowForms": "워크플로 양식",
+    "workflowFormsText": "구조화된 요청을 제출하고 들어오는 제출을 검토하며, 적절한 사람과 그룹에 맞게 접근 권한을 유지하세요.",
+    "structuredForms": "구조화된 양식",
+    "perFormAccess": "양식별 접근 권한",
+    "loadingForms": "양식 불러오는 중",
+    "loadingFormsText": "Atlas가 접근 가능한 양식을 불러오는 중입니다.",
+    "formEditor": "양식 편집기",
+    "formSubmitSuccess": "제출이 저장되었습니다.",
+    "manageFormHint": "구조, 접근 권한 및 상태를 편집할 수 있습니다. 작성자는 항상 접근 권한을 유지합니다.",
+    "evaluateFormHint": "제출을 검토하고 메모나 결정을 저장할 수 있습니다.",
+    "viewFormHint": "제출하거나 검토하지 않아도 양식을 열 수 있습니다.",
+    "noForms": "현재 사용할 수 있는 양식이 없습니다.",
+    "noFormsText": "관리자에게 양식 접근 권한을 요청하거나 양식 플러그인을 활성화해 달라고 하세요.",
+    "noFieldsYet": "아직 필드가 없습니다. 첫 번째 필드를 추가해 양식 작성을 시작하세요.",
+    "noSubmissions": "아직 제출이 없습니다.",
+    "mySubmissions": "내 제출",
+    "submitForm": "양식 제출",
+    "selectForm": "양식 선택",
+    "selectFormText": "요청 및 워크플로 양식을 만들고 필드를 정의한 다음 누가 볼 수 있고 제출하거나 검토할 수 있는지 설정하세요.",
+    "introText": "소개 텍스트",
+    "formBuilderSections": "양식 빌더 섹션",
+    "fields": "필드",
+    "permissions": "권한",
+    "addSectionDivider": "섹션 구분선 추가",
+    "archived": "보관됨",
+    "formsDescriptionPlaceholder": "접근, 계정 또는 워크플로 요청을 수집합니다.",
+    "formsDefaultIntroText": "양식을 제출하기 전에 필요한 정보를 입력해 주세요.",
+    "formsDefaultRequestTitle": "요청 제목",
+    "formsDefaultDetails": "세부 정보"
+  }
+}

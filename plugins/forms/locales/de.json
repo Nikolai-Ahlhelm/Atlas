@@ -1,0 +1,41 @@
+{
+  "code": "de",
+  "feature": {
+    "label": "Formulare",
+    "description": "Konfigurierbare Antrags- und Workflow-Formulare mit formularbezogenen Zugriffsrechten, Einsendungen und Prüfung."
+  },
+  "ui": {
+    "forms": "Formulare",
+    "formsFeatureDisabled": "Diese Funktion ist derzeit deaktiviert.",
+    "formsFeatureDisabledNotice": "Die Formularfunktion ist derzeit deaktiviert.",
+    "workflowForms": "Workflow-Formulare",
+    "workflowFormsText": "Reiche strukturierte Anfragen ein, prüfe eingehende Einsendungen und halte Zugriffe für die richtigen Personen und Gruppen aktuell.",
+    "structuredForms": "Strukturierte Formulare",
+    "perFormAccess": "Zugriff pro Formular",
+    "loadingForms": "Formulare werden geladen",
+    "loadingFormsText": "Atlas lädt die Formulare, auf die du zugreifen kannst.",
+    "formEditor": "Formular-Editor",
+    "formSubmitSuccess": "Deine Einsendung wurde gespeichert.",
+    "manageFormHint": "Darf Struktur, Zugriff und Status bearbeiten. Der Ersteller behält immer Zugriff.",
+    "evaluateFormHint": "Darf Einsendungen einsehen und Prüfnotizen oder Entscheidungen speichern.",
+    "viewFormHint": "Darf das Formular öffnen, ohne es zwingend abzusenden oder zu prüfen.",
+    "noForms": "Für dich sind noch keine Formulare verfügbar.",
+    "noFormsText": "Bitte einen Administrator, dir Zugriff auf ein Formular zu geben oder das Formulare-Plugin zu aktivieren.",
+    "noFieldsYet": "Noch keine Felder. Füge das erste Feld hinzu, um dieses Formular zu erstellen.",
+    "noSubmissions": "Noch keine Einsendungen.",
+    "mySubmissions": "Meine Einsendungen",
+    "submitForm": "Formular absenden",
+    "selectForm": "Wähle ein Formular",
+    "selectFormText": "Erstelle Antrags- und Workflow-Formulare, definiere Felder und konfiguriere, wer sie ansehen, absenden oder prüfen darf.",
+    "introText": "Einleitungstext",
+    "formBuilderSections": "Bereiche des Formular-Builders",
+    "fields": "Felder",
+    "permissions": "Berechtigungen",
+    "addSectionDivider": "Abschnittstrenner hinzufügen",
+    "archived": "Archiviert",
+    "formsDescriptionPlaceholder": "Sammle Zugriffs-, Konto- oder Workflow-Anfragen.",
+    "formsDefaultIntroText": "Bitte fülle die erforderlichen Informationen aus, bevor du das Formular absendest.",
+    "formsDefaultRequestTitle": "Anfragetitel",
+    "formsDefaultDetails": "Details"
+  }
+}

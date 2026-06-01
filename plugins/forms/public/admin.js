@@ -98,7 +98,12 @@
   function renderPermissionMatrix(permissions = {}) {
     const target = document.querySelector('#formPermissionsEditor');
     if (!target) return;
-    const entries = [['manage', 'Manage'], ['view', 'View'], ['evaluate', 'Evaluate'], ['submit', 'Submit']];
+    const entries = [
+      ['manage', msg('manage', 'Manage')],
+      ['view', msg('view', 'View')],
+      ['evaluate', msg('evaluate', 'Evaluate')],
+      ['submit', msg('submit', 'Submit')]
+    ];
     target.innerHTML = entries.map(([key, label]) => `
       <section class="permission-card">
         <div><strong>${esc(label)}</strong><p class="hint">${esc(permissionHint(key))}</p></div>
@@ -112,10 +117,10 @@
 
   function permissionHint(key) {
     return {
-      manage: 'Can edit structure, access and status.',
-      view: 'Can open the form.',
-      evaluate: 'Can inspect submissions and record decisions.',
-      submit: 'Can fill in and submit this form.'
+      manage: msg('manageFormHint', 'Can edit structure, access and status.'),
+      view: msg('viewFormHint', 'Can open the form.'),
+      evaluate: msg('evaluateFormHint', 'Can inspect submissions and record decisions.'),
+      submit: msg('submitFormHint', 'Can fill in and submit this form.')
     }[key] || '';
   }
 
@@ -275,7 +280,7 @@
         <h2>${msg('createForm', 'Create form')}</h2>
         <label>${msg('title', 'Title')} <input name="title" placeholder="User request" required></label>
         <label>${msg('formSlug', 'Form slug')} <input name="slug" placeholder="user-request"></label>
-        <label>${msg('description', 'Description')} <textarea name="description" placeholder="Collect access, account or workflow requests."></textarea></label>
+        <label>${msg('description', 'Description')} <textarea name="description" placeholder="${esc(msg('formsDescriptionPlaceholder', 'Collect access, account or workflow requests.'))}"></textarea></label>
         <div class="modal-actions"><button class="button" type="button" data-close>${msg('cancel', 'Cancel')}</button><button class="button primary" type="submit">${msg('create', 'Create')}</button></div>
       </form>
     `);
@@ -290,12 +295,12 @@
             title: form.get('title'),
             slug: form.get('slug'),
             description: form.get('description'),
-            introText: 'Please complete the required information before submitting.',
+            introText: msg('formsDefaultIntroText', 'Please complete the required information before submitting.'),
             status: 'active',
             permissions: { manage: { roles: ['Admins'], users: [] }, view: { roles: [], users: [] }, evaluate: { roles: ['Admins'], users: [] }, submit: { roles: ['Users'], users: [] } },
             fields: [
-              { key: 'request_title', label: 'Request title', type: 'text', required: true, placeholder: '', helpText: '', options: [] },
-              { key: 'details', label: 'Details', type: 'textarea', required: true, placeholder: '', helpText: '', options: [] }
+              { key: 'request_title', label: msg('formsDefaultRequestTitle', 'Request title'), type: 'text', required: true, placeholder: '', helpText: '', options: [] },
+              { key: 'details', label: msg('formsDefaultDetails', 'Details'), type: 'textarea', required: true, placeholder: '', helpText: '', options: [] }
             ]
           })
         });

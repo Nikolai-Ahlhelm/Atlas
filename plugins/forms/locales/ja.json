@@ -1,0 +1,41 @@
+{
+  "code": "ja",
+  "feature": {
+    "label": "フォーム",
+    "description": "フォームごとのアクセス権、送信、レビューを備えた設定可能な申請・ワークフローフォーム。"
+  },
+  "ui": {
+    "forms": "フォーム",
+    "formsFeatureDisabled": "この機能は現在無効です。",
+    "formsFeatureDisabledNotice": "フォーム機能は現在無効です。",
+    "workflowForms": "ワークフローフォーム",
+    "workflowFormsText": "構造化された依頼を送信し、受信した送信内容をレビューし、適切な人やグループにアクセスを合わせて維持します。",
+    "structuredForms": "構造化フォーム",
+    "perFormAccess": "フォームごとのアクセス",
+    "loadingForms": "フォームを読み込み中",
+    "loadingFormsText": "Atlas がアクセス可能なフォームを読み込んでいます。",
+    "formEditor": "フォームエディター",
+    "formSubmitSuccess": "送信内容が保存されました。",
+    "manageFormHint": "構造、アクセス、ステータスを編集できます。作成者は常にアクセス権を保持します。",
+    "evaluateFormHint": "送信内容を確認し、レビューのメモや判断を保存できます。",
+    "viewFormHint": "送信やレビューをしなくてもフォームを開くことができます。",
+    "noForms": "現在利用できるフォームはありません。",
+    "noFormsText": "管理者にフォームへのアクセス付与またはフォームプラグインの有効化を依頼してください。",
+    "noFieldsYet": "まだフィールドがありません。最初のフィールドを追加してフォーム作成を始めてください。",
+    "noSubmissions": "まだ送信がありません。",
+    "mySubmissions": "自分の送信",
+    "submitForm": "フォームを送信",
+    "selectForm": "フォームを選択",
+    "selectFormText": "申請フォームやワークフローフォームを作成し、項目を定義して、閲覧・送信・レビューできるユーザーを設定します。",
+    "introText": "紹介テキスト",
+    "formBuilderSections": "フォームビルダーのセクション",
+    "fields": "項目",
+    "permissions": "権限",
+    "addSectionDivider": "セクション区切りを追加",
+    "archived": "アーカイブ済み",
+    "formsDescriptionPlaceholder": "アクセス、アカウント、またはワークフローのリクエストを収集します。",
+    "formsDefaultIntroText": "フォームを送信する前に必要な情報を入力してください。",
+    "formsDefaultRequestTitle": "申請タイトル",
+    "formsDefaultDetails": "詳細"
+  }
+}

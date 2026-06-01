@@ -1,0 +1,20 @@
+{
+  "code": "ar",
+  "feature": {
+    "label": "التوثيق",
+    "description": "قاعدة معرفة تعتمد على Markdown مع الفئات والأذونات والتحرير عبر الويب."
+  },
+  "ui": {
+    "policies": "التوثيق",
+    "documentationFeatureDisabled": "ميزة التوثيق معطلة حاليًا.",
+    "contentEditor": "المحرر",
+    "selectContentEntry": "اختر صفحة أو فئة",
+    "selectContentEntryText": "يمكن للمشرفين تحرير Markdown الخام هنا وإنشاء محتوى جديد دون فتح محرر ملفات.",
+    "documentationEmptyStateText": "أنشئ صفحة أو فئة للبدء.",
+    "createPageTitlePlaceholder": "صفحة جديدة",
+    "documentationRawPlaceholder": "اختياري. اتركه فارغًا لإنشاء قالب ابتدائي.",
+    "createCategoryTitlePlaceholder": "فئة جديدة",
+    "categoryIndexTitlePlaceholder": "نظرة عامة على الفئة",
+    "documentationIndexRawPlaceholder": "محتوى ابتدائي اختياري لصفحة الفهرس."
+  }
+}

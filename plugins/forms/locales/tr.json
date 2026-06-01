@@ -1,0 +1,41 @@
+{
+  "code": "tr",
+  "feature": {
+    "label": "Formlar",
+    "description": "Form bazlı erişim, gönderimler ve inceleme ile yapılandırılabilir talep ve iş akışı formları."
+  },
+  "ui": {
+    "forms": "Formlar",
+    "formsFeatureDisabled": "Bu özellik şu anda devre dışı.",
+    "formsFeatureDisabledNotice": "Form özelliği şu anda devre dışı.",
+    "workflowForms": "İş akışı formları",
+    "workflowFormsText": "Yapılandırılmış istekler gönderin, gelen gönderileri inceleyin ve erişimi doğru kişi ve gruplarla uyumlu tutun.",
+    "structuredForms": "Yapılandırılmış formlar",
+    "perFormAccess": "Form başına erişim",
+    "loadingForms": "Formlar yükleniyor",
+    "loadingFormsText": "Atlas erişebildiğiniz formları yüklüyor.",
+    "formEditor": "Form düzenleyici",
+    "formSubmitSuccess": "Gönderiniz kaydedildi.",
+    "manageFormHint": "Yapı, erişim ve durumu düzenleyebilir. Oluşturan kişi her zaman erişimi korur.",
+    "evaluateFormHint": "Gönderileri inceleyebilir ve notlar veya kararlar kaydedebilir.",
+    "viewFormHint": "Formu göndermeden veya değerlendirmeden açabilir.",
+    "noForms": "Sizin için henüz kullanılabilir form yok.",
+    "noFormsText": "Bir yöneticiden size bir form erişimi vermesini veya form eklentisini etkinleştirmesini isteyin.",
+    "noFieldsYet": "Henüz alan yok. Formu oluşturmaya başlamak için ilk alanı ekleyin.",
+    "noSubmissions": "Henüz gönderi yok.",
+    "mySubmissions": "Gönderilerim",
+    "submitForm": "Formu gönder",
+    "selectForm": "Bir form seçin",
+    "selectFormText": "Talep ve iş akışı formları oluşturun, alanları tanımlayın ve bunları kimlerin görüntüleyebileceğini, gönderebileceğini veya değerlendirebileceğini yapılandırın.",
+    "introText": "Giriş metni",
+    "formBuilderSections": "Form oluşturucu bölümleri",
+    "fields": "Alanlar",
+    "permissions": "İzinler",
+    "addSectionDivider": "Bölüm ayırıcı ekle",
+    "archived": "Arşivlendi",
+    "formsDescriptionPlaceholder": "Erişim, hesap veya iş akışı taleplerini toplayın.",
+    "formsDefaultIntroText": "Formu göndermeden önce gerekli bilgileri tamamlayın.",
+    "formsDefaultRequestTitle": "Talep başlığı",
+    "formsDefaultDetails": "Ayrıntılar"
+  }
+}

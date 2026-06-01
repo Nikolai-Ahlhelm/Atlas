@@ -1,0 +1,23 @@
+{
+  "code": "en",
+  "feature": {
+    "label": "Download Center",
+    "description": "Permission-based file explorer with tags, descriptions and browser-based editing."
+  },
+  "ui": {
+    "downloadCenter": "Download Center",
+    "downloadCenterFeatureDisabled": "The download center is currently disabled.",
+    "sharedFiles": "Shared files",
+    "sharedFilesText": "Browse role-based files, inspect descriptions and tags, and download the version that is assigned to you.",
+    "fileExplorer": "File explorer",
+    "readOnly": "Read only",
+    "loadingFiles": "Loading files",
+    "loadingFilesText": "The download center is fetching the latest directory tree for you.",
+    "downloadEditor": "Download editor",
+    "selectDownloadEntry": "Select a file",
+    "selectDownloadEntryText": "Upload files, assign roles, edit descriptions and update text-based files directly in the browser.",
+    "downloadRoot": "Download root",
+    "downloadLoadFilesFailed": "Failed to load files.",
+    "downloadLoadDetailsFailed": "Failed to load file details."
+  }
+}

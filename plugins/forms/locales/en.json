@@ -1,0 +1,41 @@
+{
+  "code": "en",
+  "feature": {
+    "label": "Forms",
+    "description": "Configurable request and workflow forms with per-form access, submissions and evaluation."
+  },
+  "ui": {
+    "forms": "Forms",
+    "formsFeatureDisabled": "This feature is currently disabled.",
+    "formsFeatureDisabledNotice": "The forms feature is currently disabled.",
+    "workflowForms": "Workflow forms",
+    "workflowFormsText": "Submit structured requests, review incoming submissions and keep access aligned to the right people and groups.",
+    "structuredForms": "Structured forms",
+    "perFormAccess": "Per-form access",
+    "loadingForms": "Loading forms",
+    "loadingFormsText": "Atlas is fetching the forms you can access.",
+    "formEditor": "Form editor",
+    "formSubmitSuccess": "Your submission has been saved.",
+    "manageFormHint": "Can edit structure, access and status. The creator always keeps access.",
+    "evaluateFormHint": "Can inspect submissions and record review notes or decisions.",
+    "viewFormHint": "Can open the form without necessarily submitting or reviewing it.",
+    "noForms": "No forms are available for you yet.",
+    "noFormsText": "Ask an administrator to grant access to a form or to activate the forms plugin.",
+    "noFieldsYet": "No fields yet. Add the first field to start building this form.",
+    "noSubmissions": "No submissions yet.",
+    "mySubmissions": "My submissions",
+    "submitForm": "Submit form",
+    "selectForm": "Select a form",
+    "selectFormText": "Create request and workflow forms, define fields, and configure who may view, submit or evaluate each form.",
+    "introText": "Intro text",
+    "formBuilderSections": "Form builder sections",
+    "fields": "Fields",
+    "permissions": "Permissions",
+    "addSectionDivider": "Add section divider",
+    "archived": "Archived",
+    "formsDescriptionPlaceholder": "Collect access, account or workflow requests.",
+    "formsDefaultIntroText": "Please complete the required information before submitting.",
+    "formsDefaultRequestTitle": "Request title",
+    "formsDefaultDetails": "Details"
+  }
+}

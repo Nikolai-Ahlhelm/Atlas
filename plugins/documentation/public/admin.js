@@ -3,6 +3,8 @@
   let directories = [];
   let currentSelection = null;
   let errorBox = null;
+  const I18N = readPortalI18n().messages || {};
+  const msg = (key, fallback) => I18N[key] || fallback || key;
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init, { once: true });
@@ -55,7 +57,7 @@
     if (!target) return;
     target.innerHTML = tree.length
       ? `<div class="content-tree-list">${tree.map((node) => renderTreeNode(node)).join('')}</div>`
-      : '<div class="empty-state"><h1>No content yet</h1><p>Create a page or category to get started.</p></div>';
+      : `<div class="empty-state"><h1>${esc(msg('noContent', 'No content available yet.'))}</h1><p>${esc(msg('documentationEmptyStateText', 'Create a page or category to get started.'))}</p></div>`;
 
     target.querySelectorAll('[data-open-page]').forEach((button) => {
       button.addEventListener('click', () => loadPage(button.dataset.openPage));
@@ -132,7 +134,7 @@
     form.elements.position.value = page.meta?.position ?? 999;
     form.elements.roles.value = (page.meta?.roles || []).join(', ');
     form.elements.markdown.value = page.markdown || '';
-    document.querySelector('#documentationEditorTitle').textContent = page.title || page.slug || 'Page';
+    document.querySelector('#documentationEditorTitle').textContent = page.title || page.slug || msg('page', 'Page');
     const openButton = document.querySelector('#openLiveDocumentationButton');
     if (openButton) {
       openButton.hidden = false;
@@ -150,12 +152,12 @@
     if (pageForm) pageForm.hidden = true;
     if (empty) empty.hidden = true;
     form.elements.relative_dir.value = category.relativeDir || '';
-    form.elements.display_dir.value = category.relativeDir || 'Documentation root';
+    form.elements.display_dir.value = category.relativeDir || msg('documentationRoot', 'Documentation root');
     form.elements.config_path.value = category.configPath || '';
     form.elements.label.value = category.label || '';
     form.elements.position.value = category.position ?? 999;
     form.elements.roles.value = (category.roles || []).join(', ');
-    document.querySelector('#documentationEditorTitle').textContent = category.label || category.relativeDir || 'Category';
+    document.querySelector('#documentationEditorTitle').textContent = category.label || category.relativeDir || msg('category', 'Category');
     const openButton = document.querySelector('#openLiveDocumentationButton');
     if (openButton) {
       openButton.hidden = !category.relativeDir;
@@ -215,18 +217,18 @@
   function openPageCreateDialog() {
     const dialog = modal(`
       <form class="modal-form">
-        <h2>Create page</h2>
-        <label>Parent category
+        <h2>${msg('createPage', 'Create page')}</h2>
+        <label>${msg('parentCategory', 'Parent category')}
           <select name="parent_dir">${renderDirectoryOptions()}</select>
         </label>
-        <label>Page slug <input name="slug" placeholder="new-page"></label>
-        <label>Title <input name="title" placeholder="New page"></label>
-        <label class="check"><input name="as_index" type="checkbox"> Create as category landing page (index.md)</label>
-        <label>Roles (comma separated) <input name="roles" placeholder="Admins, Users"></label>
-        <label>Raw Markdown
-          <textarea name="raw" class="code-input" spellcheck="false" placeholder="Optional. Leave empty to generate a starter template."></textarea>
+        <label>${msg('pageSlug', 'Page slug')} <input name="slug" placeholder="new-page"></label>
+        <label>${msg('title', 'Title')} <input name="title" placeholder="${esc(msg('createPageTitlePlaceholder', 'New page'))}"></label>
+        <label class="check"><input name="as_index" type="checkbox"> ${msg('createAsIndex', 'Create as category landing page (index.md)')}</label>
+        <label>${msg('rolesCsv', 'Roles (comma separated)')} <input name="roles" placeholder="Admins, Users"></label>
+        <label>${msg('rawMarkdown', 'Raw Markdown')}
+          <textarea name="raw" class="code-input" spellcheck="false" placeholder="${esc(msg('documentationRawPlaceholder', 'Optional. Leave empty to generate a starter template.'))}"></textarea>
         </label>
-        <div class="modal-actions"><button class="button" type="button" data-close>Cancel</button><button class="button primary" type="submit">Create</button></div>
+        <div class="modal-actions"><button class="button" type="button" data-close>${msg('cancel', 'Cancel')}</button><button class="button primary" type="submit">${msg('create', 'Create')}</button></div>
       </form>
     `);
 
@@ -264,20 +266,20 @@
   function openCategoryCreateDialog() {
     const dialog = modal(`
       <form class="modal-form">
-        <h2>Create category</h2>
-        <label>Parent category
+        <h2>${msg('createCategory', 'Create category')}</h2>
+        <label>${msg('parentCategory', 'Parent category')}
           <select name="parent_dir">${renderDirectoryOptions()}</select>
         </label>
-        <label>Category slug <input name="slug" placeholder="new-category" required></label>
-        <label>Label <input name="label" placeholder="New category"></label>
-        <label>Position <input name="position" type="number" step="1" value="999"></label>
-        <label>Roles (comma separated) <input name="roles" placeholder="Admins, Users"></label>
-        <label class="check"><input name="create_index" type="checkbox" checked> Create a landing page for this category</label>
-        <label>Title <input name="index_title" placeholder="Category overview"></label>
-        <label>Raw Markdown
-          <textarea name="raw" class="code-input" spellcheck="false" placeholder="Optional start content for the index page."></textarea>
+        <label>${msg('categorySlug', 'Category slug')} <input name="slug" placeholder="new-category" required></label>
+        <label>${msg('label', 'Label')} <input name="label" placeholder="${esc(msg('createCategoryTitlePlaceholder', 'New category'))}"></label>
+        <label>${msg('position', 'Position')} <input name="position" type="number" step="1" value="999"></label>
+        <label>${msg('rolesCsv', 'Roles (comma separated)')} <input name="roles" placeholder="Admins, Users"></label>
+        <label class="check"><input name="create_index" type="checkbox" checked> ${msg('createIndexPage', 'Create a landing page for this category')}</label>
+        <label>${msg('title', 'Title')} <input name="index_title" placeholder="${esc(msg('categoryIndexTitlePlaceholder', 'Category overview'))}"></label>
+        <label>${msg('rawMarkdown', 'Raw Markdown')}
+          <textarea name="raw" class="code-input" spellcheck="false" placeholder="${esc(msg('documentationIndexRawPlaceholder', 'Optional start content for the index page.'))}"></textarea>
         </label>
-        <div class="modal-actions"><button class="button" type="button" data-close>Cancel</button><button class="button primary" type="submit">Create</button></div>
+        <div class="modal-actions"><button class="button" type="button" data-close>${msg('cancel', 'Cancel')}</button><button class="button primary" type="submit">${msg('create', 'Create')}</button></div>
       </form>
     `);
 
@@ -313,7 +315,7 @@
     return directories
       .map((directory) => {
         const value = directory.relativeDir || '';
-        const label = directory.relativeDir ? directory.relativeDir : 'Documentation root';
+        const label = directory.relativeDir ? directory.relativeDir : msg('documentationRoot', 'Documentation root');
         return `<option value="${esc(value)}">${esc(label)}</option>`;
       })
       .join('');
@@ -340,7 +342,7 @@
     document.querySelector('#documentationPageEditorForm').hidden = true;
     document.querySelector('#documentationCategoryEditorForm').hidden = true;
     document.querySelector('#documentationEditorEmpty').hidden = false;
-    document.querySelector('#documentationEditorTitle').textContent = 'Editor';
+    document.querySelector('#documentationEditorTitle').textContent = msg('contentEditor', 'Editor');
     const openButton = document.querySelector('#openLiveDocumentationButton');
     if (openButton) openButton.hidden = true;
     updateLayout();
@@ -386,7 +388,7 @@
   function showError(error) {
     if (!errorBox) return;
     errorBox.hidden = false;
-    errorBox.innerHTML = `<strong>Something went wrong.</strong><p>${esc(error?.message || 'Unexpected error')}</p>`;
+    errorBox.innerHTML = `<strong>${msg('unexpectedError', 'An unexpected error occurred.')}</strong><p>${esc(error?.message || msg('unexpectedError', 'An unexpected error occurred.'))}</p>`;
   }
 
   function clearError() {
@@ -401,5 +403,13 @@
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
+  }
+
+  function readPortalI18n() {
+    try {
+      return JSON.parse(document.querySelector('#portal-i18n')?.textContent || '{}');
+    } catch {
+      return {};
+    }
   }
 })();

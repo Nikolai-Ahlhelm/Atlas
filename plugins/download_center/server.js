@@ -94,7 +94,7 @@ export default function createDownloadCenterPlugin({ manifest, rootDir }) {
 
       if (url.pathname === '/downloads') {
         if (!context.isPluginEnabled(feature.key)) {
-          context.sendHtml(res, 404, context.renderFeatureHub({ user, locale, notice: 'The download center is currently disabled.' }));
+          context.sendHtml(res, 404, context.renderFeatureHub({ user, locale, notice: context.tf(locale, 'downloadCenterFeatureDisabled', 'The download center is currently disabled.') }));
           return true;
         }
         context.sendHtml(res, 200, renderDownloadsPage(context));
@@ -376,6 +376,7 @@ export default function createDownloadCenterPlugin({ manifest, rootDir }) {
 
   function renderDownloadsPage(context) {
     const settings = context.getSettings();
+    const featureCopy = context.getPluginFeatureCopy(feature.key, context.locale, feature);
     const body = `
       <div class="app-shell downloads-page" data-downloads-app data-is-admin="${context.user.is_admin ? 'true' : 'false'}">
         ${context.renderTopbar(context.user, context.locale, '/downloads')}
@@ -415,24 +416,26 @@ export default function createDownloadCenterPlugin({ manifest, rootDir }) {
       </div>
     `;
     return context.renderShell({
-      title: context.tf(context.locale, 'downloadCenter', 'Download Center'),
+      title: featureCopy.label,
       body,
       settings,
       locale: context.locale,
-      scripts: [context.pluginAssetUrl(feature.key, 'downloads.js')]
+      scripts: [context.pluginAssetUrl(feature.key, 'downloads.js')],
+      pluginKeys: [feature.key]
     });
   }
 
   function renderDownloadsAdminPage(context) {
     const settings = context.getSettings();
+    const featureCopy = context.getPluginFeatureCopy(feature.key, context.locale, feature);
     const body = `
       <div class="app-shell">
         ${context.renderTopbar(context.user, context.locale, '/admin/downloads')}
         <main class="admin-page" data-downloads-admin-page>
           <div class="admin-header">
             <div>
-              <h1>${context.escapeHtml(feature.label)}</h1>
-              <p class="hint">${context.escapeHtml(feature.description)}</p>
+              <h1>${context.escapeHtml(featureCopy.label)}</h1>
+              <p class="hint">${context.escapeHtml(featureCopy.description)}</p>
             </div>
             <a class="button ghost" href="/admin">${context.tf(context.locale, 'admin', 'Admin')}</a>
           </div>
@@ -492,11 +495,12 @@ export default function createDownloadCenterPlugin({ manifest, rootDir }) {
       </div>
     `;
     return context.renderShell({
-      title: context.tf(context.locale, 'downloadCenter', 'Download Center'),
+      title: featureCopy.label,
       body,
       settings,
       locale: context.locale,
-      scripts: [context.pluginAssetUrl(feature.key, 'admin.js')]
+      scripts: [context.pluginAssetUrl(feature.key, 'admin.js')],
+      pluginKeys: [feature.key]
     });
   }
 

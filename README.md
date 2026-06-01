@@ -141,6 +141,10 @@ _________________
 
 # 📒 Changelog
 
+## Version 0.3.1 
+- New: Translations added to plugins
+- Fix: Admin menu not working properly 
+ 
 ## Version 0.3.0
 - New: CMS system (role-based CMS system)
 - New: Blog system (role-based blog post system)

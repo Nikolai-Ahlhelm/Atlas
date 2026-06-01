@@ -1,0 +1,32 @@
+{
+  "code": "pl",
+  "feature": {
+    "label": "Blog",
+    "description": "Kanał wiadomości i aktualizacji oparty na Markdownie z wizualnymi kartami i obrazami głównymi artykułów."
+  },
+  "ui": {
+    "blog": "Blog",
+    "blogStudio": "Studio bloga",
+    "blogStudioText": "Twórz i edytuj wpisy blogowe w Markdownie, w tym adresy URL obrazów okładki i metadane artykułów.",
+    "latestStories": "Najnowsze wpisy z Atlas",
+    "latestStoriesText": "Udostępniaj aktualizacje, informacje o wydaniach, wewnętrzne ogłoszenia i spostrzeżenia zespołu w formacie działającym zarówno w przeglądarce, jak i bezpośrednio z plików Markdown.",
+    "posts": "Wpisy",
+    "latest": "Najnowszy",
+    "editing": "Edycja",
+    "openStudio": "Otwórz studio",
+    "markdownBased": "Oparte na Markdown",
+    "featuredPost": "Wyróżniony wpis",
+    "editorialTeam": "Zespół redakcyjny",
+    "editPost": "Edytuj wpis",
+    "noBlogPosts": "Brak wpisów na blogu",
+    "noBlogPostsEditorText": "Otwórz Studio bloga, aby utworzyć pierwszy artykuł i opublikować go w Markdownie.",
+    "noBlogPostsText": "Nie opublikowano jeszcze żadnych artykułów. Zajrzyj ponownie wkrótce.",
+    "openBlog": "Otwórz blog",
+    "selectPost": "Wybierz wpis blogowy",
+    "selectPostText": "Użyj listy po lewej lub utwórz nowy wpis, aby zacząć pisać.",
+    "blogFeatureDisabled": "Funkcja bloga jest obecnie wyłączona.",
+    "blogEditorRequired": "Wymagane są uprawnienia edytora bloga.",
+    "blogEditorApiRequired": "Wymagane są uprawnienia edytora bloga.",
+    "blogWriteStoryHere": "Napisz tutaj swoją historię."
+  }
+}

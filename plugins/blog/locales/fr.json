@@ -1,0 +1,32 @@
+{
+  "code": "fr",
+  "feature": {
+    "label": "Blog",
+    "description": "Flux d’actualités et de mises à jour basé sur Markdown avec cartes visuelles et images d’en-tête pour les articles."
+  },
+  "ui": {
+    "blog": "Blog",
+    "blogStudio": "Studio Blog",
+    "blogStudioText": "Créez et modifiez des billets de blog en Markdown, y compris les URLs des images de couverture et les métadonnées des articles.",
+    "latestStories": "Derniers articles d’Atlas",
+    "latestStoriesText": "Partagez des mises à jour, notes de version, annonces internes et retours d’équipe dans un format qui fonctionne à la fois dans le navigateur et directement depuis des fichiers Markdown.",
+    "posts": "Articles",
+    "latest": "Le plus récent",
+    "editing": "Édition",
+    "openStudio": "Ouvrir le studio",
+    "markdownBased": "Basé sur Markdown",
+    "featuredPost": "Article mis en avant",
+    "editorialTeam": "Équipe éditoriale",
+    "editPost": "Modifier l’article",
+    "noBlogPosts": "Aucun article de blog pour le moment",
+    "noBlogPostsEditorText": "Ouvrez Blog Studio pour créer le premier article et le publier en Markdown.",
+    "noBlogPostsText": "Aucun article n’a encore été publié. Revenez bientôt.",
+    "openBlog": "Ouvrir le blog",
+    "selectPost": "Sélectionnez un article de blog",
+    "selectPostText": "Utilisez la liste à gauche ou créez un nouvel article pour commencer à écrire.",
+    "blogFeatureDisabled": "La fonctionnalité blog est actuellement désactivée.",
+    "blogEditorRequired": "Les autorisations de l’éditeur du blog sont requises.",
+    "blogEditorApiRequired": "Autorisations de l’éditeur du blog requises.",
+    "blogWriteStoryHere": "Écrivez votre histoire ici."
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "code": "ko",
+  "feature": {
+    "label": "다운로드 센터",
+    "description": "태그, 설명 및 브라우저 편집 기능을 갖춘 권한 기반 파일 탐색기입니다."
+  },
+  "ui": {
+    "downloadCenter": "다운로드 센터",
+    "downloadCenterFeatureDisabled": "다운로드 센터가 현재 비활성화되어 있습니다.",
+    "sharedFiles": "공유 파일",
+    "sharedFilesText": "역할 기반 파일을 둘러보고 설명과 태그를 확인한 뒤 자신에게 할당된 버전을 다운로드하세요.",
+    "fileExplorer": "파일 탐색기",
+    "readOnly": "읽기 전용",
+    "loadingFiles": "파일 불러오는 중",
+    "loadingFilesText": "다운로드 센터가 최신 디렉터리 트리를 불러오고 있습니다.",
+    "downloadEditor": "다운로드 편집기",
+    "selectDownloadEntry": "파일 선택",
+    "selectDownloadEntryText": "파일을 업로드하고, 역할을 지정하고, 설명을 편집하고, 텍스트 파일을 브라우저에서 바로 업데이트하세요.",
+    "downloadRoot": "다운로드 루트",
+    "downloadLoadFilesFailed": "파일을 불러오지 못했습니다.",
+    "downloadLoadDetailsFailed": "파일 세부 정보를 불러오지 못했습니다."
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "code": "pl",
+  "feature": {
+    "label": "Formularze",
+    "description": "Konfigurowalne formularze zgłoszeń i workflow z dostępem per formularz, zgłoszeniami i weryfikacją."
+  },
+  "ui": {
+    "forms": "Formularze",
+    "formsFeatureDisabled": "Ta funkcja jest obecnie wyłączona.",
+    "formsFeatureDisabledNotice": "Funkcja formularzy jest obecnie wyłączona.",
+    "workflowForms": "Formularze workflow",
+    "workflowFormsText": "Składaj ustrukturyzowane wnioski, przeglądaj przychodzące zgłoszenia i utrzymuj dostęp dla odpowiednich osób i grup.",
+    "structuredForms": "Ustrukturyzowane formularze",
+    "perFormAccess": "Dostęp dla każdego formularza",
+    "loadingForms": "Ładowanie formularzy",
+    "loadingFormsText": "Atlas ładuje formularze, do których masz dostęp.",
+    "formEditor": "Edytor formularzy",
+    "formSubmitSuccess": "Twoje zgłoszenie zostało zapisane.",
+    "manageFormHint": "Może edytować strukturę, dostęp i status. Twórca zawsze zachowuje dostęp.",
+    "evaluateFormHint": "Może przeglądać zgłoszenia oraz zapisywać notatki lub decyzje.",
+    "viewFormHint": "Może otworzyć formularz bez konieczności wysyłania lub oceniania.",
+    "noForms": "Nie ma jeszcze dostępnych dla Ciebie formularzy.",
+    "noFormsText": "Poproś administratora o przyznanie dostępu do formularza lub aktywację wtyczki formularzy.",
+    "noFieldsYet": "Brak pól. Dodaj pierwsze pole, aby zacząć budować formularz.",
+    "noSubmissions": "Brak zgłoszeń.",
+    "mySubmissions": "Moje zgłoszenia",
+    "submitForm": "Wyślij formularz",
+    "selectForm": "Wybierz formularz",
+    "selectFormText": "Twórz formularze zgłoszeń i workflow, definiuj pola i konfiguruj, kto może je wyświetlać, wysyłać lub oceniać.",
+    "introText": "Tekst wprowadzający",
+    "formBuilderSections": "Sekcje kreatora formularzy",
+    "fields": "Pola",
+    "permissions": "Uprawnienia",
+    "addSectionDivider": "Dodaj separator sekcji",
+    "archived": "Zarchiwizowany",
+    "formsDescriptionPlaceholder": "Zbieraj prośby o dostęp, konto lub workflow.",
+    "formsDefaultIntroText": "Uzupełnij wymagane informacje przed wysłaniem formularza.",
+    "formsDefaultRequestTitle": "Tytuł zgłoszenia",
+    "formsDefaultDetails": "Szczegóły"
+  }
+}

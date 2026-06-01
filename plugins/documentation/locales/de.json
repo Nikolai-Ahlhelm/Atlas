@@ -1,0 +1,20 @@
+{
+  "code": "de",
+  "feature": {
+    "label": "Dokumentation",
+    "description": "Markdown-basierte Wissensdatenbank mit Kategorien, Berechtigungen und Bearbeitung im Browser."
+  },
+  "ui": {
+    "policies": "Dokumentation",
+    "documentationFeatureDisabled": "Die Dokumentationsfunktion ist derzeit deaktiviert.",
+    "contentEditor": "Editor",
+    "selectContentEntry": "Wähle eine Seite oder Kategorie",
+    "selectContentEntryText": "Admins können hier rohes Markdown bearbeiten und neue Inhalte erstellen, ohne einen Dateieditor zu öffnen.",
+    "documentationEmptyStateText": "Erstelle eine Seite oder Kategorie, um loszulegen.",
+    "createPageTitlePlaceholder": "Neue Seite",
+    "documentationRawPlaceholder": "Optional. Leer lassen, um eine Startvorlage zu erzeugen.",
+    "createCategoryTitlePlaceholder": "Neue Kategorie",
+    "categoryIndexTitlePlaceholder": "Kategorieübersicht",
+    "documentationIndexRawPlaceholder": "Optionaler Startinhalt für die Index-Seite."
+  }
+}

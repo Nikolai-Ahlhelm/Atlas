@@ -1,0 +1,41 @@
+{
+  "code": "es",
+  "feature": {
+    "label": "Formularios",
+    "description": "Formularios configurables de solicitud y flujo de trabajo con acceso por formulario, envíos y revisión."
+  },
+  "ui": {
+    "forms": "Formularios",
+    "formsFeatureDisabled": "Esta función está desactivada actualmente.",
+    "formsFeatureDisabledNotice": "La función de formularios está desactivada actualmente.",
+    "workflowForms": "Formularios de flujo de trabajo",
+    "workflowFormsText": "Envía solicitudes estructuradas, revisa los envíos entrantes y mantén el acceso alineado con las personas y grupos adecuados.",
+    "structuredForms": "Formularios estructurados",
+    "perFormAccess": "Acceso por formulario",
+    "loadingForms": "Cargando formularios",
+    "loadingFormsText": "Atlas está cargando los formularios a los que puedes acceder.",
+    "formEditor": "Editor de formularios",
+    "formSubmitSuccess": "Tu envío se ha guardado.",
+    "manageFormHint": "Puede editar la estructura, el acceso y el estado. El creador siempre conserva el acceso.",
+    "evaluateFormHint": "Puede revisar envíos y guardar notas o decisiones.",
+    "viewFormHint": "Puede abrir el formulario sin necesidad de enviarlo o revisarlo.",
+    "noForms": "Aún no hay formularios disponibles para ti.",
+    "noFormsText": "Pide a un administrador que te conceda acceso a un formulario o active el plugin de formularios.",
+    "noFieldsYet": "Aún no hay campos. Añade el primero para empezar a crear este formulario.",
+    "noSubmissions": "Aún no hay envíos.",
+    "mySubmissions": "Mis envíos",
+    "submitForm": "Enviar formulario",
+    "selectForm": "Selecciona un formulario",
+    "selectFormText": "Crea formularios de solicitud y flujo de trabajo, define campos y configura quién puede verlos, enviarlos o revisarlos.",
+    "introText": "Texto introductorio",
+    "formBuilderSections": "Secciones del constructor de formularios",
+    "fields": "Campos",
+    "permissions": "Permisos",
+    "addSectionDivider": "Añadir separador de sección",
+    "archived": "Archivado",
+    "formsDescriptionPlaceholder": "Recoge solicitudes de acceso, de cuenta o de flujo de trabajo.",
+    "formsDefaultIntroText": "Completa la información requerida antes de enviar el formulario.",
+    "formsDefaultRequestTitle": "Título de la solicitud",
+    "formsDefaultDetails": "Detalles"
+  }
+}

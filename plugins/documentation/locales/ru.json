@@ -1,0 +1,20 @@
+{
+  "code": "ru",
+  "feature": {
+    "label": "Документация",
+    "description": "База знаний на основе Markdown с категориями, правами доступа и редактированием через веб."
+  },
+  "ui": {
+    "policies": "Документация",
+    "documentationFeatureDisabled": "Функция документации сейчас отключена.",
+    "contentEditor": "Редактор",
+    "selectContentEntry": "Выберите страницу или категорию",
+    "selectContentEntryText": "Администраторы могут редактировать здесь исходный Markdown и создавать новый контент без открытия файлового редактора.",
+    "documentationEmptyStateText": "Создайте страницу или категорию, чтобы начать.",
+    "createPageTitlePlaceholder": "Новая страница",
+    "documentationRawPlaceholder": "Необязательно. Оставьте пустым, чтобы создать стартовый шаблон.",
+    "createCategoryTitlePlaceholder": "Новая категория",
+    "categoryIndexTitlePlaceholder": "Обзор категории",
+    "documentationIndexRawPlaceholder": "Необязательное стартовое содержимое для индексной страницы."
+  }
+}

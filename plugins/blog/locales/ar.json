@@ -1,0 +1,32 @@
+{
+  "code": "ar",
+  "feature": {
+    "label": "المدونة",
+    "description": "موجز أخبار وتحديثات يعتمد على Markdown مع بطاقات مرئية وصور رئيسية للمقالات."
+  },
+  "ui": {
+    "blog": "المدونة",
+    "blogStudio": "استوديو المدونة",
+    "blogStudioText": "أنشئ وحرر تدوينات Markdown، بما في ذلك روابط صور الغلاف وبيانات المقالات.",
+    "latestStories": "أحدث القصص من Atlas",
+    "latestStoriesText": "شارك التحديثات وملاحظات الإصدار والإعلانات الداخلية ورؤى الفريق بصيغة تعمل في المتصفح ومن ملفات Markdown مباشرة.",
+    "posts": "المقالات",
+    "latest": "الأحدث",
+    "editing": "التحرير",
+    "openStudio": "افتح الاستوديو",
+    "markdownBased": "يعتمد على Markdown",
+    "featuredPost": "مقال مميز",
+    "editorialTeam": "فريق التحرير",
+    "editPost": "تحرير المقال",
+    "noBlogPosts": "لا توجد مقالات مدونة بعد",
+    "noBlogPostsEditorText": "افتح استوديو المدونة لإنشاء أول مقال ونشره بصيغة Markdown.",
+    "noBlogPostsText": "لم يتم نشر أي مقالات بعد. يرجى العودة قريبًا.",
+    "openBlog": "افتح المدونة",
+    "selectPost": "اختر مقالًا من المدونة",
+    "selectPostText": "استخدم القائمة على اليسار أو أنشئ مقالًا جديدًا لبدء الكتابة.",
+    "blogFeatureDisabled": "ميزة المدونة معطلة حاليًا.",
+    "blogEditorRequired": "مطلوب أذونات محرر المدونة.",
+    "blogEditorApiRequired": "مطلوب أذونات محرر المدونة.",
+    "blogWriteStoryHere": "اكتب قصتك هنا."
+  }
+}

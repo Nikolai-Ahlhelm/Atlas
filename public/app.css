@@ -638,6 +638,8 @@ select {
 
 .cms-page-shell {
   width: min(100%, 1360px);
+  padding-left: 18px;
+  padding-right: 18px;
 }
 
 .cms-hero,
@@ -1290,6 +1292,8 @@ dd {
 .profile-form {
   display: grid;
   gap: 14px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
 }
 
 .profile-form h2 {

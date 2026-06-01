@@ -1,0 +1,32 @@
+{
+  "code": "tr",
+  "feature": {
+    "label": "Blog",
+    "description": "Makale kahraman görselleri ve görsel kartlarla Markdown tabanlı haber ve güncelleme akışı."
+  },
+  "ui": {
+    "blog": "Blog",
+    "blogStudio": "Blog Stüdyosu",
+    "blogStudioText": "Kapak görseli URL’leri ve makale meta verileri dahil Markdown blog yazıları oluşturun ve düzenleyin.",
+    "latestStories": "Atlas’tan son yazılar",
+    "latestStoriesText": "Güncellemeleri, sürüm notlarını, dahili duyuruları ve ekip içgörülerini hem tarayıcıda hem de doğrudan Markdown dosyalarından çalışan bir biçimde paylaşın.",
+    "posts": "Yazılar",
+    "latest": "En son",
+    "editing": "Düzenleme",
+    "openStudio": "Stüdyoyu aç",
+    "markdownBased": "Markdown tabanlı",
+    "featuredPost": "Öne çıkan yazı",
+    "editorialTeam": "Editör ekibi",
+    "editPost": "Yazıyı düzenle",
+    "noBlogPosts": "Henüz blog yazısı yok",
+    "noBlogPostsEditorText": "İlk makaleyi oluşturup Markdown olarak yayımlamak için Blog Stüdyosu’nu açın.",
+    "noBlogPostsText": "Henüz hiç makale yayımlanmadı. Lütfen yakında tekrar kontrol edin.",
+    "openBlog": "Blogu aç",
+    "selectPost": "Bir blog yazısı seçin",
+    "selectPostText": "Soldaki listeyi kullanın veya yazmaya başlamak için yeni bir yazı oluşturun.",
+    "blogFeatureDisabled": "Blog özelliği şu anda devre dışı.",
+    "blogEditorRequired": "Blog düzenleyici izinleri gerekiyor.",
+    "blogEditorApiRequired": "Blog düzenleyici izinleri gerekiyor.",
+    "blogWriteStoryHere": "Hikayenizi buraya yazın."
+  }
+}

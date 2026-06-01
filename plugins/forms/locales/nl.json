@@ -1,0 +1,41 @@
+{
+  "code": "nl",
+  "feature": {
+    "label": "Formulieren",
+    "description": "Configureerbare aanvraag- en workflowformulieren met toegang per formulier, inzendingen en beoordeling."
+  },
+  "ui": {
+    "forms": "Formulieren",
+    "formsFeatureDisabled": "Deze functie is momenteel uitgeschakeld.",
+    "formsFeatureDisabledNotice": "De formulierenfunctie is momenteel uitgeschakeld.",
+    "workflowForms": "Workflowformulieren",
+    "workflowFormsText": "Dien gestructureerde aanvragen in, beoordeel binnenkomende inzendingen en houd de toegang afgestemd op de juiste mensen en groepen.",
+    "structuredForms": "Gestructureerde formulieren",
+    "perFormAccess": "Toegang per formulier",
+    "loadingForms": "Formulieren laden",
+    "loadingFormsText": "Atlas laadt de formulieren waar je toegang toe hebt.",
+    "formEditor": "Formuliereditor",
+    "formSubmitSuccess": "Je inzending is opgeslagen.",
+    "manageFormHint": "Kan structuur, toegang en status bewerken. De maker behoudt altijd toegang.",
+    "evaluateFormHint": "Kan inzendingen bekijken en notities of beslissingen opslaan.",
+    "viewFormHint": "Kan het formulier openen zonder het noodzakelijk te verzenden of te beoordelen.",
+    "noForms": "Er zijn nog geen formulieren voor je beschikbaar.",
+    "noFormsText": "Vraag een beheerder om je toegang tot een formulier te geven of de formulieren-plugin te activeren.",
+    "noFieldsYet": "Nog geen velden. Voeg het eerste veld toe om dit formulier op te bouwen.",
+    "noSubmissions": "Nog geen inzendingen.",
+    "mySubmissions": "Mijn inzendingen",
+    "submitForm": "Formulier verzenden",
+    "selectForm": "Selecteer een formulier",
+    "selectFormText": "Maak aanvraag- en workflowformulieren, definieer velden en bepaal wie ze mag bekijken, indienen of beoordelen.",
+    "introText": "Introductietekst",
+    "formBuilderSections": "Secties van de formulierbouwer",
+    "fields": "Velden",
+    "permissions": "Rechten",
+    "addSectionDivider": "Sectiescheiding toevoegen",
+    "archived": "Gearchiveerd",
+    "formsDescriptionPlaceholder": "Verzamel toegangs-, account- of workflowaanvragen.",
+    "formsDefaultIntroText": "Vul de vereiste informatie in voordat je het formulier indient.",
+    "formsDefaultRequestTitle": "Aanvraagtitel",
+    "formsDefaultDetails": "Details"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "code": "it",
+  "feature": {
+    "label": "Centro download",
+    "description": "Esplora file basato sui permessi con tag, descrizioni e modifica nel browser."
+  },
+  "ui": {
+    "downloadCenter": "Centro download",
+    "downloadCenterFeatureDisabled": "Il centro download è attualmente disattivato.",
+    "sharedFiles": "File condivisi",
+    "sharedFilesText": "Sfoglia file basati sui ruoli, controlla descrizioni e tag e scarica la versione assegnata a te.",
+    "fileExplorer": "Esplora file",
+    "readOnly": "Sola lettura",
+    "loadingFiles": "Caricamento file",
+    "loadingFilesText": "Il centro download sta caricando per te l’albero delle directory più recente.",
+    "downloadEditor": "Editor download",
+    "selectDownloadEntry": "Seleziona un file",
+    "selectDownloadEntryText": "Carica file, assegna ruoli, modifica descrizioni e aggiorna file di testo direttamente nel browser.",
+    "downloadRoot": "Radice download",
+    "downloadLoadFilesFailed": "Impossibile caricare i file.",
+    "downloadLoadDetailsFailed": "Impossibile caricare i dettagli del file."
+  }
+}

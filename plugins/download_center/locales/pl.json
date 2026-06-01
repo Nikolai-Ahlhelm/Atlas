@@ -1,0 +1,23 @@
+{
+  "code": "pl",
+  "feature": {
+    "label": "Centrum pobierania",
+    "description": "Eksplorator plików oparty na uprawnieniach z tagami, opisami i edycją w przeglądarce."
+  },
+  "ui": {
+    "downloadCenter": "Centrum pobierania",
+    "downloadCenterFeatureDisabled": "Centrum pobierania jest obecnie wyłączone.",
+    "sharedFiles": "Udostępnione pliki",
+    "sharedFilesText": "Przeglądaj pliki zależne od ról, sprawdzaj opisy i tagi oraz pobieraj wersję przypisaną do Ciebie.",
+    "fileExplorer": "Eksplorator plików",
+    "readOnly": "Tylko do odczytu",
+    "loadingFiles": "Ładowanie plików",
+    "loadingFilesText": "Centrum pobierania ładuje dla Ciebie najnowsze drzewo katalogów.",
+    "downloadEditor": "Edytor pobierania",
+    "selectDownloadEntry": "Wybierz plik",
+    "selectDownloadEntryText": "Przesyłaj pliki, przypisuj role, edytuj opisy i aktualizuj pliki tekstowe bezpośrednio w przeglądarce.",
+    "downloadRoot": "Główny katalog pobierania",
+    "downloadLoadFilesFailed": "Nie udało się załadować plików.",
+    "downloadLoadDetailsFailed": "Nie udało się załadować szczegółów pliku."
+  }
+}
