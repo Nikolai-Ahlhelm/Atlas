@@ -141,6 +141,19 @@ _________________
 
 # 📒 Changelog
 
+## Version 0.3.0
+- New: CMS system (role-based CMS system)
+- New: Blog system (role-based blog post system)
+- New: Forms system (role-based forms with designer)
+- New: Download center (role-based file sharing)
+- New: Translations in many languages
+- New: Freedom of design, change opacity and colors of everything
+- Change: Features refactored to standalone plugins
+- Change: Navbar redesign -> Buttons moved to user menu
+- Change: Redesigned admin menu 
+- Change: Minor design improvements
+- Fixed countless bugs
+
 ## Version 0.2.0 
 - Major design overhaul 
 

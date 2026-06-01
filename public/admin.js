@@ -2,12 +2,12 @@
   let users = [];
   let roles = [];
   let plugins = [];
-  let contentTree = [];
-  let contentDirectories = [];
-  let downloadTree = [];
-  let downloadDirectories = [];
-  let currentContentSelection = null;
-  let currentDownloadSelection = null;
+  let formsTree = [];
+  let currentFormSelection = null;
+  let formDraftFields = [];
+  let expandedFormFieldKeys = new Set();
+  let draggedFieldIndex = null;
+  let activeFormSubtab = 'fields';
   let activeAdminTab = 'content';
   const I18N = readPortalI18n().messages || {};
   const msg = (key, fallback) => I18N[key] || fallback || key;
@@ -29,18 +29,19 @@
     });
     document.querySelector('[data-new-user]')?.addEventListener('click', () => openUserDialog());
     document.querySelector('[data-new-role]')?.addEventListener('click', () => openRoleDialog());
-    document.querySelector('[data-new-page]')?.addEventListener('click', () => openPageCreateDialog());
-    document.querySelector('[data-new-category]')?.addEventListener('click', () => openCategoryCreateDialog());
-    document.querySelector('[data-new-download]')?.addEventListener('click', () => openDownloadCreateDialog());
+    document.querySelector('[data-new-form]')?.addEventListener('click', () => openFormCreateDialog());
     document.querySelectorAll('[data-admin-tab]').forEach((button) => {
       button.addEventListener('click', () => setActiveTab(button.dataset.adminTab || 'content'));
     });
     document.querySelector('#settingsForm')?.addEventListener('submit', saveSettings);
-    document.querySelector('#pageEditorForm')?.addEventListener('submit', savePageContent);
-    document.querySelector('#categoryEditorForm')?.addEventListener('submit', saveCategoryContent);
-    document.querySelector('#downloadEditorForm')?.addEventListener('submit', saveDownloadContent);
-    document.querySelector('#downloadEditorForm input[name="file_upload"]')?.addEventListener('change', handleDownloadUploadSelect);
-    document.querySelector('#deleteDownloadButton')?.addEventListener('click', deleteCurrentDownload);
+    document.querySelector('#formEditorForm')?.addEventListener('submit', saveFormContent);
+    document.querySelector('#deleteFormButton')?.addEventListener('click', deleteCurrentForm);
+    document.querySelector('[data-add-form-field]')?.addEventListener('click', () => openFieldDialog());
+    document.querySelector('[data-add-divider-field]')?.addEventListener('click', () => openFieldDialog({ type: 'divider' }));
+    document.querySelector('#backToFormsListButton')?.addEventListener('click', closeFormDetail);
+    document.querySelectorAll('[data-form-subtab]').forEach((button) => {
+      button.addEventListener('click', () => setActiveFormSubtab(button.dataset.formSubtab || 'fields'));
+    });
     document.querySelector('input[name="font_scale"]')?.addEventListener('input', (event) => {
       document.querySelector('[data-font-preview]').textContent = `${Math.round(Number(event.target.value) * 100)}%`;
     });
@@ -67,64 +68,36 @@
   async function refresh() {
     try {
       clearAdminError();
-      const [userRows, roleRows, pluginRows, contentResponse, downloadResponse] = await Promise.all([
+      const [userRows, roleRows, pluginRows, formsResponse] = await Promise.all([
         fetchJson('/api/admin/users'),
         fetchJson('/api/admin/roles'),
         fetchJson('/api/admin/plugins'),
-        fetchJson('/api/admin/content/tree'),
-        fetchJson('/api/admin/downloads/tree')
+        fetchJson('/api/admin/forms')
       ]);
       users = Array.isArray(userRows) ? userRows : [];
       roles = Array.isArray(roleRows) ? roleRows : [];
       plugins = Array.isArray(pluginRows) ? pluginRows : [];
-      contentTree = Array.isArray(contentResponse?.tree) ? contentResponse.tree : [];
-      contentDirectories = Array.isArray(contentResponse?.directories) ? contentResponse.directories : [];
-      downloadTree = Array.isArray(downloadResponse?.tree) ? downloadResponse.tree : [];
-      downloadDirectories = Array.isArray(downloadResponse?.directories) ? downloadResponse.directories : [];
+      formsTree = Array.isArray(formsResponse?.tree) ? formsResponse.tree : [];
       renderPlugins();
       renderUsers();
       renderRoles();
-      renderContentTree();
-      renderDownloadTree();
+      renderFormsTree();
       renderAdminTabs();
-      await restoreContentSelection();
-      await restoreDownloadSelection();
+      await restoreFormSelection();
     } catch (error) {
       renderAdminError(error);
     }
   }
 
-  async function restoreContentSelection() {
-    if (!currentContentSelection) {
+  async function restoreFormSelection() {
+    if (!currentFormSelection) {
       const params = new URLSearchParams(location.search);
-      const page = params.get('page');
-      const dir = params.get('dir');
-      if (page) {
-        await loadPage(page);
-        return;
-      }
-      if (dir !== null) {
-        await loadCategory(dir);
-      }
+      const formSlug = params.get('form');
+      if (formSlug) await loadForm(formSlug);
+      else closeFormDetail();
       return;
     }
-    if (currentContentSelection.type === 'page') {
-      await loadPage(currentContentSelection.slug);
-      return;
-    }
-    if (currentContentSelection.type === 'category') {
-      await loadCategory(currentContentSelection.relativeDir);
-    }
-  }
-
-  async function restoreDownloadSelection() {
-    if (!currentDownloadSelection) {
-      const params = new URLSearchParams(location.search);
-      const fileId = params.get('download');
-      if (fileId) await loadDownloadFile(fileId);
-      return;
-    }
-    await loadDownloadFile(currentDownloadSelection.id);
+    await loadForm(currentFormSelection.slug);
   }
 
   function renderPlugins() {
@@ -245,15 +218,15 @@
     }));
   }
 
-  function renderDownloadTree() {
-    const target = document.querySelector('#downloadsTree');
+  function renderFormsTree() {
+    const target = document.querySelector('#formsTree');
     if (!target) return;
-    target.innerHTML = downloadTree.length
-      ? `<div class="content-tree-list">${downloadTree.map((node) => renderDownloadNode(node)).join('')}</div>`
-      : `<div class="notice">${msg('noFiles', 'No files available yet.')}</div>`;
+    target.innerHTML = formsTree.length
+      ? `<div class="content-tree-list">${formsTree.map((form) => renderFormNode(form)).join('')}</div>`
+      : `<div class="notice">${msg('noForms', 'No forms available yet.')}</div>`;
 
-    target.querySelectorAll('[data-open-download]').forEach((button) => button.addEventListener('click', async () => {
-      await loadDownloadFile(button.dataset.openDownload);
+    target.querySelectorAll('[data-open-form]').forEach((button) => button.addEventListener('click', async () => {
+      await loadForm(button.dataset.openForm);
     }));
   }
 
@@ -280,25 +253,13 @@
     `;
   }
 
-  function renderDownloadNode(node) {
-    if (node.type === 'file') {
-      const active = Number(currentDownloadSelection?.id) === Number(node.id);
-      return `
-        <button class="content-tree-item ${active ? 'active' : ''}" type="button" data-open-download="${esc(node.id)}">
-          <span class="content-tree-kind">FILE</span>
-          <span class="content-tree-label">${esc(node.relativePath || node.name)}</span>
-        </button>
-      `;
-    }
-
+  function renderFormNode(form) {
+    const active = currentFormSelection?.slug === form.slug;
     return `
-      <section class="content-tree-group">
-        <div class="content-tree-item content-tree-category">
-          <span class="content-tree-kind">DIR</span>
-          <span class="content-tree-label">${esc(node.relativeDir || node.label || 'Folder')}</span>
-        </div>
-        <div class="content-tree-children">${(node.children || []).map((child) => renderDownloadNode(child)).join('')}</div>
-      </section>
+      <button class="content-tree-item ${active ? 'active' : ''}" type="button" data-open-form="${esc(form.slug)}">
+        <span class="content-tree-kind">${form.status === 'archived' ? 'ARC' : 'FORM'}</span>
+        <span class="content-tree-label">${esc(form.title || form.slug)}</span>
+      </button>
     `;
   }
 
@@ -354,30 +315,29 @@
     }
   }
 
-  async function loadDownloadFile(id) {
+  async function loadForm(slug) {
     try {
-      const file = await fetchJson(`/api/admin/downloads/file?id=${encodeURIComponent(id)}`);
-      setActiveTab('downloads');
-      currentDownloadSelection = { id: file.id };
+      const form = await fetchJson(`/api/admin/forms/form?slug=${encodeURIComponent(slug)}`);
+      setActiveTab('forms');
+      currentFormSelection = { slug: form.slug };
+      formDraftFields = Array.isArray(form.fields) ? structuredClone(form.fields) : [];
       syncAdminUrl();
-      renderDownloadTree();
-      document.querySelector('#downloadEditorTitle').textContent = `${msg('downloadEditor', 'Download editor')}: ${file.relativePath || file.name}`;
-      document.querySelector('#downloadEditorEmpty').hidden = true;
-      const form = document.querySelector('#downloadEditorForm');
-      form.hidden = false;
-      form.elements.id.value = file.id || '';
-      form.elements.name.value = file.name || '';
-      form.elements.relative_dir.value = file.relativeDir || '';
-      form.elements.mime_type.value = file.mimeType || '';
-      form.elements.roles.value = Array.isArray(file.roles) ? file.roles.join(', ') : '';
-      form.elements.description.value = file.description || '';
-      form.elements.tags.value = Array.isArray(file.tags) ? file.tags.join(', ') : '';
-      form.elements.encoding.value = file.isText ? 'text' : 'binary';
-      form.elements.content_text.value = file.isText ? (file.contentText || '') : '';
-      form.elements.content_text.disabled = !file.isText;
-      form.elements.file_upload.value = '';
-      form.elements.content_base64.value = '';
-      document.querySelector('#deleteDownloadButton').hidden = false;
+      renderFormsTree();
+      updateFormsAdminLayout();
+      document.querySelector('#formEditorTitle').textContent = `${msg('formEditor', 'Form editor')}: ${form.title || form.slug}`;
+      document.querySelector('#formEditorEmpty').hidden = true;
+      const editorForm = document.querySelector('#formEditorForm');
+      editorForm.hidden = false;
+      editorForm.elements.id.value = form.id || '';
+      editorForm.elements.slug.value = form.slug || '';
+      editorForm.elements.title.value = form.title || '';
+      editorForm.elements.status.value = form.status || 'active';
+      editorForm.elements.description.value = form.description || '';
+      editorForm.elements.intro_text.value = form.introText || '';
+      renderPermissionMatrix(form.permissions || {});
+      renderFormFieldRows();
+      setActiveFormSubtab(activeFormSubtab);
+      document.querySelector('#deleteFormButton').hidden = false;
     } catch (error) {
       showError(error);
     }
@@ -565,62 +525,40 @@
     }
   }
 
-  async function saveDownloadContent(event) {
+  async function saveFormContent(event) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const form = event.currentTarget;
+    const payload = {
+      id: form.elements.id.value || undefined,
+      slug: form.elements.slug.value,
+      title: form.elements.title.value,
+      status: form.elements.status.value,
+      description: form.elements.description.value,
+      introText: form.elements.intro_text.value,
+      permissions: readPermissionMatrix(),
+      fields: readFormFields()
+    };
     try {
-      await fetchJson('/api/admin/downloads/file', {
+      const result = await fetchJson('/api/admin/forms/form', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          id: form.get('id') || undefined,
-          name: form.get('name'),
-          relative_dir: form.get('relative_dir'),
-          mime_type: form.get('mime_type'),
-          roles: parseRoles(form.get('roles')),
-          description: form.get('description'),
-          tags: parseCsv(form.get('tags')),
-          encoding: form.get('encoding'),
-          content_text: form.get('content_text'),
-          content_base64: form.get('content_base64')
-        })
+        body: JSON.stringify(payload)
       });
       await refresh();
-      if (form.get('id')) await loadDownloadFile(String(form.get('id')));
+      if (result?.slug) await loadForm(result.slug);
     } catch (error) {
       showError(error);
     }
   }
 
-  async function handleDownloadUploadSelect(event) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    const form = document.querySelector('#downloadEditorForm');
-    form.elements.name.value = form.elements.name.value || file.name;
-    form.elements.mime_type.value = file.type || form.elements.mime_type.value || 'application/octet-stream';
-
-    if (looksLikeTextFile(file)) {
-      form.elements.encoding.value = 'text';
-      form.elements.content_text.disabled = false;
-      form.elements.content_text.value = await file.text();
-      form.elements.content_base64.value = '';
-      return;
-    }
-
-    form.elements.encoding.value = 'binary';
-    form.elements.content_text.disabled = true;
-    form.elements.content_text.value = msg('binaryFileHint', 'Binary file selected. Use upload replacement to update the file.');
-    form.elements.content_base64.value = await readFileAsBase64(file);
-  }
-
-  async function deleteCurrentDownload() {
-    const id = document.querySelector('#downloadEditorForm')?.elements.id.value;
-    if (!id || !confirm(msg('deleteFileConfirm', 'Delete this file?'))) return;
+  async function deleteCurrentForm() {
+    const id = document.querySelector('#formEditorForm')?.elements.id.value;
+    if (!id || !confirm(msg('deleteFormConfirm', 'Delete this form and all submissions?'))) return;
     try {
-      await fetchJson(`/api/admin/downloads/file/${id}`, { method: 'DELETE' });
-      currentDownloadSelection = null;
-      document.querySelector('#downloadEditorForm').hidden = true;
-      document.querySelector('#downloadEditorEmpty').hidden = false;
+      await fetchJson(`/api/admin/forms/form/${id}`, { method: 'DELETE' });
+      currentFormSelection = null;
+      document.querySelector('#formEditorForm').hidden = true;
+      document.querySelector('#formEditorEmpty').hidden = false;
       await refresh();
     } catch (error) {
       showError(error);
@@ -724,18 +662,13 @@
     });
   }
 
-  function openDownloadCreateDialog() {
+  function openFormCreateDialog() {
     const dialog = modal(`
       <form class="modal-form">
-        <h2>${msg('uploadFile', 'Upload file')}</h2>
-        <label>${msg('folderPath', 'Folder path')}
-          <select name="relative_dir">${renderDownloadDirectoryOptions()}</select>
-        </label>
-        <label>${msg('fileName', 'File name')} <input name="name" placeholder="handbook.pdf" required></label>
-        <label>${msg('description', 'Description')} <textarea name="description"></textarea></label>
-        <label>${msg('tagsCsv', 'Tags (comma separated)')} <input name="tags" placeholder="handbook, hr"></label>
-        <label>${msg('rolesCsv', 'Roles (comma separated)')} <input name="roles" placeholder="Admins, Users"></label>
-        <label>${msg('uploadFile', 'Upload file')} <input name="file" type="file" required></label>
+        <h2>${msg('createForm', 'Create form')}</h2>
+        <label>${msg('title', 'Title')} <input name="title" placeholder="User request" required></label>
+        <label>${msg('formSlug', 'Form slug')} <input name="slug" placeholder="user-request"></label>
+        <label>${msg('description', 'Description')} <textarea name="description" placeholder="Collect access, account or workflow requests."></textarea></label>
         <div class="modal-actions"><button class="button" type="button" data-close>${msg('cancel', 'Cancel')}</button><button class="button primary" type="submit">${msg('create', 'Create')}</button></div>
       </form>
     `);
@@ -743,35 +676,335 @@
     dialog.querySelector('form').addEventListener('submit', async (event) => {
       event.preventDefault();
       const form = new FormData(event.currentTarget);
-      const file = form.get('file');
-      if (!(file instanceof File) || !file.name) {
-        alert(msg('uploadFileRequired', 'Please choose a file to upload.'));
-        return;
-      }
       try {
-        const isText = looksLikeTextFile(file);
-        const payload = {
-          name: form.get('name') || file.name,
-          relative_dir: form.get('relative_dir'),
-          description: form.get('description'),
-          tags: parseCsv(form.get('tags')),
-          roles: parseRoles(form.get('roles')),
-          mime_type: file.type || 'application/octet-stream',
-          encoding: isText ? 'text' : 'binary',
-          content_text: isText ? await file.text() : '',
-          content_base64: isText ? '' : await readFileAsBase64(file)
-        };
-        const result = await fetchJson('/api/admin/downloads/file', {
+        const result = await fetchJson('/api/admin/forms/form', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(payload)
+          body: JSON.stringify({
+            title: form.get('title'),
+            slug: form.get('slug'),
+            description: form.get('description'),
+            introText: 'Please complete the required information before submitting.',
+            status: 'active',
+            permissions: {
+              manage: { roles: ['Admins'], users: [] },
+              view: { roles: [], users: [] },
+              evaluate: { roles: ['Admins'], users: [] },
+              submit: { roles: ['Users'], users: [] }
+            },
+            fields: [
+              { key: 'request_title', label: 'Request title', type: 'text', required: true, placeholder: '', helpText: '', options: [] },
+              { key: 'details', label: 'Details', type: 'textarea', required: true, placeholder: '', helpText: '', options: [] }
+            ]
+          })
         });
         dialog.remove();
         await refresh();
-        if (result?.id) await loadDownloadFile(result.id);
+        if (result?.slug) await loadForm(result.slug);
       } catch (error) {
         showError(error);
       }
+    });
+  }
+
+  function renderPermissionMatrix(permissions = {}) {
+    const target = document.querySelector('#formPermissionsEditor');
+    if (!target) return;
+    const entries = [
+      ['manage', msg('manage', 'Manage')],
+      ['view', msg('view', 'View')],
+      ['evaluate', msg('evaluate', 'Evaluate')],
+      ['submit', msg('submit', 'Submit')]
+    ];
+    target.innerHTML = entries.map(([key, label]) => `
+      <section class="permission-card" data-permission-key="${esc(key)}">
+        <div>
+          <strong>${esc(label)}</strong>
+          <p class="hint">${permissionHint(key)}</p>
+        </div>
+        <div class="permission-grid">
+          <fieldset>
+            <legend>${msg('groups', 'Groups')}</legend>
+            ${roles.map((role) => `
+              <label class="check">
+                <input type="checkbox" data-permission-scope="role" data-permission-key="${esc(key)}" value="${esc(role.name)}" ${(permissions[key]?.roles || []).includes(role.name) ? 'checked' : ''}>
+                ${esc(role.name)}
+              </label>
+            `).join('')}
+          </fieldset>
+          <fieldset>
+            <legend>${msg('people', 'People')}</legend>
+            ${users.map((user) => `
+              <label class="check">
+                <input type="checkbox" data-permission-scope="user" data-permission-key="${esc(key)}" value="${esc(user.email)}" ${(permissions[key]?.users || []).includes(user.email) ? 'checked' : ''}>
+                ${esc(user.name || user.email)}
+              </label>
+            `).join('')}
+          </fieldset>
+        </div>
+      </section>
+    `).join('');
+  }
+
+  function permissionHint(key) {
+    const hints = {
+      manage: msg('manageFormHint', 'Can edit structure, access and status. The creator always keeps access.'),
+      view: msg('viewFormHint', 'Can open the form without necessarily submitting or reviewing it.'),
+      evaluate: msg('evaluateFormHint', 'Can inspect submissions and record review notes or decisions.'),
+      submit: msg('submitFormHint', 'Can fill in and submit this form.')
+    };
+    return hints[key] || '';
+  }
+
+  function readPermissionMatrix() {
+    const permissions = {};
+    ['manage', 'view', 'evaluate', 'submit'].forEach((key) => {
+      permissions[key] = {
+        roles: Array.from(document.querySelectorAll(`input[data-permission-scope="role"][data-permission-key="${key}"]:checked`)).map((input) => input.value),
+        users: Array.from(document.querySelectorAll(`input[data-permission-scope="user"][data-permission-key="${key}"]:checked`)).map((input) => input.value)
+      };
+    });
+    return permissions;
+  }
+
+  function renderFormFieldRows() {
+    const target = document.querySelector('#formFieldsEditor');
+    if (!target) return;
+    target.innerHTML = formDraftFields.length
+      ? formDraftFields.map((field, index) => renderFieldCard(field, index)).join('')
+      : `<div class="notice">${msg('noFieldsYet', 'No fields yet. Add the first field to start building this form.')}</div>`;
+
+    target.querySelectorAll('[data-edit-form-field]').forEach((button) => button.addEventListener('click', () => {
+      openFieldDialog(formDraftFields[Number(button.dataset.editFormField)], Number(button.dataset.editFormField));
+    }));
+    target.querySelectorAll('[data-remove-form-field]').forEach((button) => button.addEventListener('click', () => {
+      removeField(Number(button.dataset.removeFormField));
+    }));
+    target.querySelectorAll('[data-toggle-field-details]').forEach((button) => button.addEventListener('click', () => {
+      toggleFieldDetails(Number(button.dataset.toggleFieldDetails));
+    }));
+    target.querySelectorAll('[data-form-field-card]').forEach((card) => {
+      card.addEventListener('dragstart', handleFieldDragStart);
+      card.addEventListener('dragover', handleFieldDragOver);
+      card.addEventListener('drop', handleFieldDrop);
+      card.addEventListener('dragend', handleFieldDragEnd);
+    });
+  }
+
+  function renderFieldCard(field, index) {
+    const expanded = expandedFormFieldKeys.has(field.key);
+    const visibility = describeVisibility(field.visibility);
+    const options = field.type === 'select' ? (field.options || []).join(', ') : '';
+    return `
+      <section class="form-field-row ${field.type === 'divider' ? 'is-divider' : ''} ${expanded ? 'is-expanded' : ''}" draggable="true" data-form-field-card="${index}">
+        <div class="form-field-row-head">
+          <div class="form-field-row-title">
+            <button class="icon-button field-disclosure" type="button" data-toggle-field-details="${index}" aria-expanded="${expanded ? 'true' : 'false'}">${expanded ? '▾' : '▸'}</button>
+            <div>
+              <strong>${esc(field.label || field.key)}</strong>
+              <p class="hint">${esc(field.type === 'divider' ? msg('sectionDivider', 'Section divider') : field.type)}</p>
+            </div>
+          </div>
+          <div class="row-actions">
+            <button class="button small" type="button" data-edit-form-field="${index}">${msg('edit', 'Edit')}</button>
+            <button class="button small danger" type="button" data-remove-form-field="${index}">${msg('delete', 'Delete')}</button>
+          </div>
+        </div>
+        <div class="form-field-summary">
+          <span class="pill">${esc(field.type)}</span>
+          <span class="pill">${esc(field.key)}</span>
+          ${field.required ? `<span class="pill">${msg('required', 'Required')}</span>` : ''}
+        </div>
+        <div class="form-field-details" ${expanded ? '' : 'hidden'}>
+          ${options ? `<p class="hint"><strong>${msg('options', 'Options')}:</strong> ${esc(options)}</p>` : ''}
+          ${visibility ? `<p class="hint"><strong>${msg('visibilityRule', 'Visibility rule')}:</strong> ${esc(visibility)}</p>` : ''}
+          ${field.helpText ? `<p class="hint">${esc(field.helpText)}</p>` : ''}
+          ${!options && !visibility && !field.helpText ? `<p class="hint">${msg('noAdditionalDetails', 'No additional details for this field.')}</p>` : ''}
+        </div>
+      </section>
+    `;
+  }
+
+  function readFormFields() {
+    return formDraftFields.slice();
+  }
+
+  function openFieldDialog(field = null, index = null) {
+    const editMode = Number.isInteger(index);
+    const dependencies = formDraftFields
+      .filter((item, itemIndex) => item.type !== 'divider' && itemIndex !== index)
+      .map((item) => item.key);
+    const dialog = modal(`
+      <form class="modal-form">
+        <h2>${editMode ? msg('editField', 'Edit field') : msg('addField', 'Add field')}</h2>
+        <div class="content-meta">
+          <label>${msg('type', 'Type')}
+            <select name="type">
+              ${['text', 'textarea', 'email', 'select', 'date', 'number', 'checkbox', 'divider'].map((type) => `<option value="${type}" ${field?.type === type ? 'selected' : ''}>${esc(type)}</option>`).join('')}
+            </select>
+          </label>
+          <label>${msg('label', 'Label')} <input name="label" value="${esc(field?.label || '')}" required></label>
+          <label>${msg('key', 'Key')} <input name="key" value="${esc(field?.key || '')}" placeholder="request_title"></label>
+          <label>${msg('placeholder', 'Placeholder')} <input name="placeholder" value="${esc(field?.placeholder || '')}"></label>
+        </div>
+        <label>${msg('helpText', 'Help text')} <input name="helpText" value="${esc(field?.helpText || '')}"></label>
+        <label>${msg('optionsCsv', 'Options (comma separated)')} <input name="options" value="${esc((field?.options || []).join(', '))}" placeholder="Option A, Option B"></label>
+        <label class="check"><input name="required" type="checkbox" ${field?.required ? 'checked' : ''}> ${msg('required', 'Required')}</label>
+        <div class="panel-inline-section">
+          <div class="panel-head compact"><h2>${msg('visibilityRule', 'Visibility rule')}</h2></div>
+          <label>${msg('dependsOnField', 'Depends on field')}
+            <select name="visibility_field">
+              <option value="">${esc(msg('alwaysVisible', 'Always visible'))}</option>
+              ${dependencies.map((key) => `<option value="${esc(key)}" ${field?.visibility?.fieldKey === key ? 'selected' : ''}>${esc(key)}</option>`).join('')}
+            </select>
+          </label>
+          <div class="content-meta">
+            <label>${msg('conditionType', 'Condition')}
+              <select name="visibility_mode">
+                <option value="filled" ${field?.visibility?.mode !== 'equals' ? 'selected' : ''}>${esc(msg('isFilled', 'Is filled / enabled'))}</option>
+                <option value="equals" ${field?.visibility?.mode === 'equals' ? 'selected' : ''}>${esc(msg('equalsValue', 'Equals value'))}</option>
+              </select>
+            </label>
+            <label>${msg('expectedValue', 'Expected value')} <input name="visibility_value" value="${esc(field?.visibility?.expectedValue || '')}" placeholder="Ja"></label>
+          </div>
+        </div>
+        <div class="modal-actions"><button class="button" type="button" data-close>${msg('cancel', 'Cancel')}</button><button class="button primary" type="submit">${msg('save', 'Save')}</button></div>
+      </form>
+    `);
+    const typeSelect = dialog.querySelector('select[name="type"]');
+    const syncFieldDialog = () => {
+      const type = typeSelect.value;
+      const optionsLabel = dialog.querySelector('input[name="options"]').closest('label');
+      const requiredLabel = dialog.querySelector('input[name="required"]').closest('label');
+      const visibilityPanel = dialog.querySelector('.panel-inline-section');
+      optionsLabel.hidden = type !== 'select';
+      requiredLabel.hidden = type === 'divider';
+      dialog.querySelector('input[name="placeholder"]').closest('label').hidden = type === 'divider';
+      dialog.querySelector('input[name="helpText"]').closest('label').hidden = type === 'divider';
+      visibilityPanel.hidden = type === 'divider';
+    };
+    typeSelect.addEventListener('change', syncFieldDialog);
+    syncFieldDialog();
+    dialog.querySelector('form').addEventListener('submit', (event) => {
+      event.preventDefault();
+      const form = new FormData(event.currentTarget);
+      const type = String(form.get('type') || 'text');
+      const nextField = {
+        key: form.get('key'),
+        label: form.get('label'),
+        type,
+        placeholder: form.get('placeholder'),
+        helpText: form.get('helpText'),
+        options: parseCsv(form.get('options')),
+        required: form.get('required') === 'on'
+      };
+      const visibilityField = String(form.get('visibility_field') || '').trim();
+      if (visibilityField && type !== 'divider') {
+        nextField.visibility = {
+          fieldKey: visibilityField,
+          mode: form.get('visibility_mode'),
+          expectedValue: form.get('visibility_value')
+        };
+      }
+      if (editMode) formDraftFields[index] = nextField;
+      else formDraftFields.push(nextField);
+      renderFormFieldRows();
+      dialog.remove();
+    });
+  }
+
+  function moveField(index, direction) {
+    const nextIndex = index + direction;
+    if (nextIndex < 0 || nextIndex >= formDraftFields.length) return;
+    const [field] = formDraftFields.splice(index, 1);
+    formDraftFields.splice(nextIndex, 0, field);
+    renderFormFieldRows();
+  }
+
+  function removeField(index) {
+    const removed = formDraftFields[index];
+    if (removed?.key) expandedFormFieldKeys.delete(removed.key);
+    formDraftFields.splice(index, 1);
+    renderFormFieldRows();
+  }
+
+  function toggleFieldDetails(index) {
+    const field = formDraftFields[index];
+    if (!field?.key) return;
+    if (expandedFormFieldKeys.has(field.key)) expandedFormFieldKeys.delete(field.key);
+    else expandedFormFieldKeys.add(field.key);
+    renderFormFieldRows();
+  }
+
+  function handleFieldDragStart(event) {
+    draggedFieldIndex = Number(event.currentTarget.dataset.formFieldCard);
+    event.currentTarget.classList.add('is-dragging');
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', String(draggedFieldIndex));
+  }
+
+  function handleFieldDragOver(event) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    event.currentTarget.classList.add('is-drop-target');
+  }
+
+  function handleFieldDrop(event) {
+    event.preventDefault();
+    const targetIndex = Number(event.currentTarget.dataset.formFieldCard);
+    const sourceIndex = Number.isInteger(draggedFieldIndex) ? draggedFieldIndex : Number(event.dataTransfer.getData('text/plain'));
+    event.currentTarget.classList.remove('is-drop-target');
+    if (!Number.isInteger(sourceIndex) || !Number.isInteger(targetIndex) || sourceIndex === targetIndex) return;
+    const [field] = formDraftFields.splice(sourceIndex, 1);
+    formDraftFields.splice(targetIndex, 0, field);
+    draggedFieldIndex = null;
+    renderFormFieldRows();
+  }
+
+  function handleFieldDragEnd(event) {
+    draggedFieldIndex = null;
+    document.querySelectorAll('[data-form-field-card]').forEach((card) => {
+      card.classList.remove('is-dragging', 'is-drop-target');
+    });
+    event.currentTarget.classList.remove('is-dragging');
+  }
+
+  function describeVisibility(visibility) {
+    if (!visibility?.fieldKey) return '';
+    if (visibility.mode === 'equals') return `${visibility.fieldKey} = ${visibility.expectedValue || ''}`;
+    return `${visibility.fieldKey} ${msg('mustBeFilled', 'must be filled')}`;
+  }
+
+  function closeFormDetail() {
+    currentFormSelection = null;
+    formDraftFields = [];
+    expandedFormFieldKeys = new Set();
+    const editor = document.querySelector('#formEditorForm');
+    const empty = document.querySelector('#formEditorEmpty');
+    if (editor) editor.hidden = true;
+    if (empty) empty.hidden = false;
+    updateFormsAdminLayout();
+    syncAdminUrl();
+  }
+
+  function updateFormsAdminLayout() {
+    const listPanel = document.querySelector('#formsTree')?.closest('[data-admin-panel="forms"]');
+    const detailPanel = document.querySelector('.form-detail-panel-admin[data-admin-panel="forms"]');
+    const backButton = document.querySelector('#backToFormsListButton');
+    const hasSelection = Boolean(currentFormSelection?.slug);
+    const formsTabActive = activeAdminTab === 'forms';
+    if (listPanel) listPanel.hidden = !formsTabActive || hasSelection;
+    if (detailPanel) detailPanel.classList.toggle('is-full-width', hasSelection);
+    if (backButton) backButton.hidden = !hasSelection;
+  }
+
+  function setActiveFormSubtab(tab) {
+    activeFormSubtab = ['fields', 'permissions'].includes(tab) ? tab : 'fields';
+    document.querySelectorAll('[data-form-subtab]').forEach((button) => {
+      button.classList.toggle('active', button.dataset.formSubtab === activeFormSubtab);
+    });
+    document.querySelectorAll('[data-form-subpanel]').forEach((panel) => {
+      panel.hidden = panel.dataset.formSubpanel !== activeFormSubtab;
     });
   }
 
@@ -785,34 +1018,15 @@
       .join('');
   }
 
-  function renderDownloadDirectoryOptions() {
-    return downloadDirectories
-      .map((directory) => {
-        const value = directory.relativeDir || '';
-        const label = directory.relativeDir ? directory.relativeDir : msg('downloadRoot', 'Download root');
-        return `<option value="${esc(value)}">${esc(label)}</option>`;
-      })
-      .join('');
-  }
-
   function hydrateAdminStateFromUrl() {
     const params = new URLSearchParams(location.search);
     activeAdminTab = normalizeAdminTab(params.get('tab'));
-    const page = params.get('page');
-    const dir = params.get('dir');
-    const download = params.get('download');
-    if (page) {
-      currentContentSelection = { type: 'page', slug: page };
-    } else if (dir !== null && dir !== '') {
-      currentContentSelection = { type: 'category', relativeDir: dir };
-    } else if (dir === '') {
-      currentContentSelection = { type: 'category', relativeDir: '' };
-    }
-    if (download) currentDownloadSelection = { id: Number(download) || download };
+    const form = params.get('form');
+    if (form) currentFormSelection = { slug: form };
   }
 
   function normalizeAdminTab(value) {
-    return ['plugins', 'content', 'downloads', 'access', 'instance'].includes(value) ? value : 'content';
+    return ['plugins', 'forms', 'content', 'access', 'instance'].includes(value) ? value : 'content';
   }
 
   function setActiveTab(tab) {
@@ -828,22 +1042,15 @@
     document.querySelectorAll('[data-admin-panel]').forEach((panel) => {
       panel.hidden = panel.dataset.adminPanel !== activeAdminTab;
     });
+    if (activeAdminTab === 'forms') updateFormsAdminLayout();
   }
 
   function syncAdminUrl() {
     const params = new URLSearchParams(location.search);
     params.set('tab', activeAdminTab);
-    params.delete('page');
-    params.delete('dir');
-    params.delete('download');
-    if (currentContentSelection?.type === 'page') {
-      params.set('page', currentContentSelection.slug);
-    }
-    if (currentContentSelection?.type === 'category') {
-      params.set('dir', currentContentSelection.relativeDir || '');
-    }
-    if (currentDownloadSelection?.id) {
-      params.set('download', currentDownloadSelection.id);
+    params.delete('form');
+    if (currentFormSelection?.slug) {
+      params.set('form', currentFormSelection.slug);
     }
     const next = `${location.pathname}?${params.toString()}`;
     history.replaceState({}, '', next);
@@ -910,23 +1117,6 @@
       .split(/[,\n]/)
       .map((item) => item.trim())
       .filter(Boolean);
-  }
-
-  function looksLikeTextFile(file) {
-    if (file.type.startsWith('text/')) return true;
-    return /\.(md|markdown|txt|json|js|mjs|cjs|css|html|xml|csv|tsv|svg)$/i.test(file.name);
-  }
-
-  function readFileAsBase64(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.addEventListener('load', () => {
-        const value = String(reader.result || '');
-        resolve(value.includes(',') ? value.split(',')[1] : value);
-      });
-      reader.addEventListener('error', () => reject(reader.error || new Error('Failed to read file.')));
-      reader.readAsDataURL(file);
-    });
   }
 
   function syncSwitchLabels() {

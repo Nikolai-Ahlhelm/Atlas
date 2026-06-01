@@ -3,19 +3,15 @@ import { DatabaseSync } from 'node:sqlite';
 import { randomBytes, scryptSync, timingSafeEqual, createHash } from 'node:crypto';
 import { readFileSync, readdirSync, existsSync, mkdirSync, statSync, writeFileSync, unlinkSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const CONTENT_DIR = join(ROOT, 'content');
 const LOCALES_DIR = join(ROOT, 'locales');
-const DOCS_DIR = join(CONTENT_DIR, 'docs');
-const BLOG_DIR = join(CONTENT_DIR, 'blog');
 const CMS_DIR = join(CONTENT_DIR, 'cms');
-const HOME_PATH = join(CONTENT_DIR, 'home.md');
-const POLICY_DIR = join(CONTENT_DIR, 'policies');
 const PUBLIC_DIR = join(ROOT, 'public');
+const PLUGINS_DIR = join(ROOT, 'plugins');
 const DATA_DIR = process.env.DATA_DIR ? normalize(process.env.DATA_DIR) : join(ROOT, 'data');
-const DOWNLOADS_DIR = join(DATA_DIR, 'downloads');
 const DB_PATH = join(DATA_DIR, 'data.sqlite');
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '127.0.0.1';
@@ -75,28 +71,7 @@ const DEFAULT_SETTINGS = {
   ])
 };
 
-const FEATURE_DEFINITIONS = {
-  documentation: {
-    key: 'documentation',
-    label: 'Documentation',
-    href: '/',
-    description: 'Markdown-based knowledge base with categories, permissions and web editing.',
-    defaultEnabled: true
-  },
-  download_center: {
-    key: 'download_center',
-    label: 'Download Center',
-    href: '/downloads',
-    description: 'Permission-based file explorer with tags, descriptions and browser-based editing.',
-    defaultEnabled: true
-  },
-  blog: {
-    key: 'blog',
-    label: 'Blog',
-    href: '/blog',
-    description: 'Markdown-based news and update feed with visual cards and article hero images.',
-    defaultEnabled: true
-  },
+const CORE_FEATURE_DEFINITIONS = {
   cms: {
     key: 'cms',
     label: 'Pages',
@@ -105,6 +80,9 @@ const FEATURE_DEFINITIONS = {
     defaultEnabled: true
   }
 };
+
+const loadedPlugins = await loadPlugins();
+const FEATURE_DEFINITIONS = buildFeatureDefinitions(loadedPlugins);
 
 const LEGACY_SETTING_MIGRATIONS = {
   app_name: { from: 'Dokumentenportal', to: DEFAULT_SETTINGS.app_name },
@@ -122,23 +100,57 @@ const LEGACY_SETTING_MIGRATIONS = {
   }
 };
 
-if (!existsSync(DATA_DIR)) {
-  mkdirSync(DATA_DIR, { recursive: true });
+function buildFeatureDefinitions(plugins) {
+  const definitions = { ...CORE_FEATURE_DEFINITIONS };
+  for (const plugin of plugins) {
+    if (plugin?.feature?.key) definitions[plugin.feature.key] = plugin.feature;
+  }
+  return definitions;
 }
 
-if (!existsSync(DOWNLOADS_DIR)) {
-  mkdirSync(DOWNLOADS_DIR, { recursive: true });
+async function loadPlugins() {
+  if (!existsSync(PLUGINS_DIR)) return [];
+  const pluginDirs = readdirSync(PLUGINS_DIR, { withFileTypes: true }).filter((entry) => entry.isDirectory());
+  const plugins = [];
+
+  for (const entry of pluginDirs) {
+    const rootDir = join(PLUGINS_DIR, entry.name);
+    const manifestPath = join(rootDir, 'plugin.json');
+    const serverPath = join(rootDir, 'server.js');
+    if (!existsSync(manifestPath) || !existsSync(serverPath)) continue;
+    try {
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+      const module = await import(pathToFileURL(serverPath).href);
+      const factory = typeof module.default === 'function' ? module.default : null;
+      if (!factory) continue;
+      const plugin = factory({ manifest, rootDir });
+      if (!plugin?.key || !plugin?.feature) continue;
+      plugins.push({
+        ...plugin,
+        rootDir,
+        manifest,
+        publicDir: plugin.publicDir || join(rootDir, 'public'),
+        adminPage: plugin.adminPage || null
+      });
+    } catch (error) {
+      console.error(`[PLUGIN] Failed to load ${entry.name}`, error);
+    }
+  }
+
+  return plugins;
+}
+
+if (!existsSync(DATA_DIR)) {
+  mkdirSync(DATA_DIR, { recursive: true });
 }
 
 const db = new DatabaseSync(DB_PATH);
 initializeDatabase();
 
-let catalog = loadCatalog();
-let blogCatalog = loadBlogCatalog();
 let cmsCatalog = loadCmsCatalog();
 
 if (process.argv.includes('--check')) {
-  logInfo(`Catalog check completed: loaded ${catalog.policies.length} documents.`);
+  logInfo(`Catalog check completed: loaded ${cmsCatalog.pages.length} CMS pages.`);
   process.exit(0);
 }
 
@@ -217,6 +229,7 @@ async function route(req, res) {
   const settings = getSettings();
   const locale = resolveLocale(req, user, settings);
 
+  if (url.pathname.startsWith('/assets/plugins/')) return servePluginAsset(res, url.pathname);
   if (url.pathname.startsWith('/assets/')) return serveAsset(res, url.pathname);
   if (url.pathname === '/login') return sendHtml(res, 200, renderLogin(req, user, locale));
   if (url.pathname === '/api/login' && req.method === 'POST') return handleLogin(req, res, locale);
@@ -225,6 +238,8 @@ async function route(req, res) {
   if (url.pathname === '/auth/entra/callback') return handleEntraCallback(req, res, url);
 
   if (!user) return redirect(res, '/login');
+
+  if (await handlePluginRequest({ req, res, url, user, locale, settings })) return;
 
   if (url.pathname === '/api/me') return sendJson(res, 200, publicUser(user));
   if (url.pathname === '/api/profile' && req.method === 'GET') return sendJson(res, 200, publicUser(user));
@@ -240,53 +255,20 @@ async function route(req, res) {
   if (url.pathname === '/api/admin/plugins' && req.method === 'POST') return requireAdmin(user, res, () => handleUpdatePlugin(req, res));
   if (url.pathname === '/api/admin/settings' && req.method === 'GET') return requireAdmin(user, res, () => sendJson(res, 200, getSettings()));
   if (url.pathname === '/api/admin/settings' && req.method === 'POST') return requireAdmin(user, res, () => handleUpdateSettings(req, res));
-  if (url.pathname === '/api/admin/content/tree' && req.method === 'GET') return requireAdmin(user, res, () => sendJson(res, 200, getEditableContentTree()));
-  if (url.pathname === '/api/admin/content/page' && req.method === 'GET') return requireAdmin(user, res, () => handleGetEditablePage(res, url));
-  if (url.pathname === '/api/admin/content/page' && req.method === 'POST') return requireAdmin(user, res, () => handleSaveEditablePage(req, res));
-  if (url.pathname === '/api/admin/content/category' && req.method === 'GET') return requireAdmin(user, res, () => handleGetEditableCategory(res, url));
-  if (url.pathname === '/api/admin/content/category' && req.method === 'POST') return requireAdmin(user, res, () => handleSaveEditableCategory(req, res));
-  if (url.pathname === '/api/admin/downloads/tree' && req.method === 'GET') return requireAdmin(user, res, () => sendJson(res, 200, getDownloadAdminTree()));
-  if (url.pathname === '/api/admin/downloads/file' && req.method === 'GET') return requireAdmin(user, res, () => handleGetDownloadFile(res, url, true));
-  if (url.pathname === '/api/admin/downloads/file' && req.method === 'POST') return requireAdmin(user, res, () => handleSaveDownloadFile(req, res));
-  if (url.pathname.startsWith('/api/admin/downloads/file/') && req.method === 'DELETE') return requireAdmin(user, res, () => handleDeleteDownloadFile(res, url.pathname));
-  if (url.pathname === '/api/blog/studio/tree' && req.method === 'GET') return requireBlogEditor(user, res, () => sendJson(res, 200, getBlogStudioTree()));
-  if (url.pathname === '/api/blog/studio/post' && req.method === 'GET') return requireBlogEditor(user, res, () => handleGetBlogStudioPost(res, url));
-  if (url.pathname === '/api/blog/studio/post' && req.method === 'POST') return requireBlogEditor(user, res, () => handleSaveBlogStudioPost(req, res, user));
-  if (url.pathname.startsWith('/api/blog/studio/post/') && req.method === 'DELETE') return requireBlogEditor(user, res, () => handleDeleteBlogStudioPost(res, url.pathname));
   if (url.pathname === '/api/cms/studio/tree' && req.method === 'GET') return requireCmsEditor(user, res, () => sendJson(res, 200, getCmsStudioTree()));
   if (url.pathname === '/api/cms/studio/page' && req.method === 'GET') return requireCmsEditor(user, res, () => handleGetCmsStudioPage(res, url));
   if (url.pathname === '/api/cms/studio/page' && req.method === 'POST') return requireCmsEditor(user, res, () => handleSaveCmsStudioPage(req, res, user));
   if (url.pathname.startsWith('/api/cms/studio/page/') && req.method === 'DELETE') return requireCmsEditor(user, res, () => handleDeleteCmsStudioPage(res, url.pathname));
   if (url.pathname === '/api/admin/reset' && req.method === 'POST') return requireAdmin(user, res, () => handleFactoryReset(req, res));
   if (url.pathname === '/api/admin/reload' && req.method === 'POST') return requireAdmin(user, res, () => {
-    logInfo(`Admin content reload requested by ${user.email}`);
-    catalog = loadCatalog();
-    blogCatalog = loadBlogCatalog();
+    logInfo(`CMS reload requested by ${user.email}`);
     cmsCatalog = loadCmsCatalog();
-    logInfo(`Admin content reload completed: ${catalog.policies.length} documents, ${blogCatalog.posts.length} blog posts and ${cmsCatalog.pages.length} CMS pages loaded`);
-    sendJson(res, 200, { ok: true, policies: catalog.policies.length, blogPosts: blogCatalog.posts.length, cmsPages: cmsCatalog.pages.length });
+    logInfo(`CMS reload completed: ${cmsCatalog.pages.length} pages loaded`);
+    sendJson(res, 200, { ok: true, cmsPages: cmsCatalog.pages.length });
   });
 
-  if (url.pathname === '/api/downloads/tree') return requirePlugin('download_center', res, () => sendJson(res, 200, getDownloadTreeForUser(user)));
-  if (url.pathname === '/api/downloads/file' && req.method === 'GET') return requirePlugin('download_center', res, () => handleGetDownloadFile(res, url, false, user));
-  if (url.pathname.startsWith('/download/')) return requirePlugin('download_center', res, () => handleDownloadAsset(res, url.pathname, user));
-
   if (url.pathname === '/') {
-    if (isPluginEnabled('documentation')) return sendHtml(res, 200, renderApp({ user, activeSlug: null, locale }));
-    if (isPluginEnabled('download_center')) return sendHtml(res, 200, renderDownloadsPage({ user, locale }));
     return sendHtml(res, 200, renderFeatureHub({ user, locale }));
-  }
-  if (url.pathname === '/downloads') {
-    if (!isPluginEnabled('download_center')) return sendHtml(res, 404, renderFeatureHub({ user, locale, notice: 'The download center is currently disabled.' }));
-    return sendHtml(res, 200, renderDownloadsPage({ user, locale }));
-  }
-  if (url.pathname === '/blog') {
-    if (!isPluginEnabled('blog')) return sendHtml(res, 404, renderFeatureHub({ user, locale, notice: 'The blog feature is currently disabled.' }));
-    return sendHtml(res, 200, renderBlogIndexPage({ user, locale }));
-  }
-  if (url.pathname === '/blog-studio') {
-    if (!canManageBlog(user)) return sendHtml(res, 403, renderBlogIndexPage({ user, locale, notice: 'Blog editor permissions are required.' }));
-    return sendHtml(res, 200, renderBlogStudio(user, locale));
   }
   if (url.pathname === '/pages') {
     if (!isPluginEnabled('cms')) return sendHtml(res, 404, renderFeatureHub({ user, locale, notice: 'The CMS feature is currently disabled.' }));
@@ -297,22 +279,6 @@ async function route(req, res) {
     return sendHtml(res, 200, renderCmsStudio(user, locale));
   }
   if (url.pathname === '/admin') return requireAdmin(user, res, () => sendHtml(res, 200, renderAdmin(user, locale)));
-  if (url.pathname.startsWith('/policy/')) {
-    if (!isPluginEnabled('documentation')) return sendHtml(res, 404, renderFeatureHub({ user, locale, notice: 'The documentation feature is currently disabled.' }));
-    const slug = decodeURIComponent(url.pathname.slice('/policy/'.length));
-    const policy = catalog.bySlug.get(slug);
-    if (!policy) return sendHtml(res, 404, renderApp({ user, activeSlug: null, notice: t(locale, 'notFoundPolicy'), locale }));
-    if (!canReadPolicy(user, policy)) return sendHtml(res, 403, renderApp({ user, activeSlug: null, notice: t(locale, 'noPermission'), locale }));
-    return sendHtml(res, 200, renderApp({ user, activeSlug: slug, policy, locale }));
-  }
-  if (url.pathname.startsWith('/blog/')) {
-    if (!isPluginEnabled('blog')) return sendHtml(res, 404, renderFeatureHub({ user, locale, notice: 'The blog feature is currently disabled.' }));
-    const slug = decodeURIComponent(url.pathname.slice('/blog/'.length));
-    const post = blogCatalog.bySlug.get(slug);
-    if (!post) return sendHtml(res, 404, renderBlogIndexPage({ user, locale, notice: t(locale, 'notFoundPage') }));
-    if (!canReadBlogPost(user, post)) return sendHtml(res, 403, renderBlogIndexPage({ user, locale, notice: t(locale, 'noPermission') }));
-    return sendHtml(res, 200, renderBlogPostPage({ user, locale, post }));
-  }
   if (url.pathname.startsWith('/page/')) {
     if (!isPluginEnabled('cms')) return sendHtml(res, 404, renderFeatureHub({ user, locale, notice: 'The CMS feature is currently disabled.' }));
     const slug = decodeURIComponent(url.pathname.slice('/page/'.length));
@@ -322,7 +288,7 @@ async function route(req, res) {
     return sendHtml(res, 200, renderCmsPage({ user, locale, page }));
   }
 
-  sendHtml(res, 404, renderApp({ user, activeSlug: null, notice: t(locale, 'notFoundPage'), locale }));
+  sendHtml(res, 404, renderFeatureHub({ user, locale, notice: t(locale, 'notFoundPage') }));
 }
 
 function initializeDatabase() {
@@ -369,32 +335,62 @@ function initializeDatabase() {
       key TEXT PRIMARY KEY,
       enabled INTEGER NOT NULL DEFAULT 1
     );
-    CREATE TABLE IF NOT EXISTS download_files (
+    CREATE TABLE IF NOT EXISTS forms (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      relative_dir TEXT NOT NULL DEFAULT '',
-      storage_name TEXT NOT NULL,
-      storage_path TEXT NOT NULL,
+      slug TEXT NOT NULL UNIQUE,
+      title TEXT NOT NULL,
       description TEXT NOT NULL DEFAULT '',
-      tags_json TEXT NOT NULL DEFAULT '[]',
-      mime_type TEXT NOT NULL DEFAULT 'application/octet-stream',
-      encoding TEXT NOT NULL DEFAULT 'binary',
-      file_size INTEGER NOT NULL DEFAULT 0,
+      intro_text TEXT NOT NULL DEFAULT '',
+      creator_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      permissions_json TEXT NOT NULL DEFAULT '{}',
+      fields_json TEXT NOT NULL DEFAULT '[]',
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
-    CREATE TABLE IF NOT EXISTS download_file_roles (
-      file_id INTEGER NOT NULL REFERENCES download_files(id) ON DELETE CASCADE,
-      role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
-      PRIMARY KEY (file_id, role_id)
+    CREATE TABLE IF NOT EXISTS form_submissions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      form_id INTEGER NOT NULL REFERENCES forms(id) ON DELETE CASCADE,
+      submitter_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      submitter_name TEXT NOT NULL DEFAULT '',
+      submitter_email TEXT NOT NULL DEFAULT '',
+      values_json TEXT NOT NULL DEFAULT '{}',
+      status TEXT NOT NULL DEFAULT 'submitted',
+      notes TEXT NOT NULL DEFAULT '',
+      reviewed_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      reviewed_at TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
   `);
 
   ensureColumn('roles', 'color', "TEXT NOT NULL DEFAULT '#5d6b82'");
   ensureColumn('users', 'language', 'TEXT');
+  initializePlugins();
 
   seedFactoryData();
   logInfo('Database initialization completed');
+}
+
+function initializePlugins() {
+  for (const plugin of loadedPlugins) {
+    try {
+      plugin.init?.(buildPluginContext());
+    } catch (error) {
+      logError(`Plugin initialization failed for ${plugin.key}`, error);
+    }
+  }
+}
+
+function resetPluginsToFactoryDefaults() {
+  for (const plugin of loadedPlugins) {
+    try {
+      plugin.resetToFactoryDefaults?.(buildPluginContext({ plugin }));
+    } catch (error) {
+      logError(`Plugin reset failed for ${plugin.key}`, error);
+      throw error;
+    }
+  }
 }
 
 function seedFactoryData() {
@@ -503,16 +499,9 @@ function resetDatabaseToFactoryDefaults() {
       DELETE FROM roles;
       DELETE FROM settings;
       DELETE FROM plugins;
-      DELETE FROM download_file_roles;
-      DELETE FROM download_files;
-      DELETE FROM sqlite_sequence WHERE name IN ('users', 'roles', 'download_files');
+      DELETE FROM sqlite_sequence WHERE name IN ('users', 'roles');
     `);
-    for (const file of readdirSync(DOWNLOADS_DIR)) {
-      const filePath = normalize(join(DOWNLOADS_DIR, file));
-      if (filePath.startsWith(DOWNLOADS_DIR) && existsSync(filePath) && statSync(filePath).isFile()) {
-        unlinkSync(filePath);
-      }
-    }
+    resetPluginsToFactoryDefaults();
     seedFactoryData();
     db.exec('COMMIT');
     logInfo('Database reset completed');
@@ -909,18 +898,12 @@ function renderTopbar(user, locale, currentHref = '/') {
       </div>
       <nav class="top-links">${links.map((link) => renderTopbarLink(link, currentHref)).join('')}</nav>
       <div class="top-actions">
-        ${canManageCms(user) ? `<a class="button ghost" href="/cms-studio">${tf(locale, 'cmsStudio', 'CMS Studio')}</a>` : ''}
-        ${canManageBlog(user) ? `<a class="button ghost" href="/blog-studio">${tf(locale, 'blogStudio', 'Blog Studio')}</a>` : ''}
-        ${user.is_admin ? `<a class="button ghost" href="/admin">${t(locale, 'admin')}</a>` : ''}
-        <button class="theme-toggle" type="button" data-theme-toggle aria-label="Toggle theme"><span></span></button>
         <button class="button user-menu-trigger" type="button" data-profile-open>👤 ${escapeHtml(user.name)}</button>
-        <form action="/api/logout" method="post"><button class="button" type="submit">${t(locale, 'logout')}</button></form>
       </div>
     </header>
     ${renderProfileDialog(user, locale)}
   `;
 }
-
 function renderTopbarLink(link, currentHref) {
   if (Array.isArray(link.children) && link.children.length) {
     const active = link.children.some((child) => isNavActive(currentHref, child.href));
@@ -1004,40 +987,40 @@ function renderFeatureHub({ user, locale, notice = '' }) {
   return renderShell({ title: settings.app_name, body, settings, locale });
 }
 
-function renderDownloadsPage({ user, locale, notice = '' }) {
+function renderFormsPage({ user, locale, notice = '' }) {
   const settings = getSettings();
   const body = `
-    <div class="app-shell downloads-page" data-downloads-app data-is-admin="${user.is_admin ? 'true' : 'false'}">
-      ${renderTopbar(user, locale, '/downloads')}
+    <div class="app-shell forms-page" data-forms-app>
+      ${renderTopbar(user, locale, '/forms')}
       <div class="workspace">
         <aside class="sidebar" id="sidebar">
           <div class="sidebar-head">
-            <span>${tf(locale, 'downloadCenter', 'Download Center')}</span>
+            <span>${tf(locale, 'forms', 'Forms')}</span>
             <button class="icon-button mobile-only" data-sidebar-close aria-label="Close navigation">x</button>
           </div>
-          <div id="downloadTree" class="doc-nav"></div>
+          <div id="formsNav" class="doc-nav"></div>
         </aside>
         <main class="content">
           ${notice ? `<div class="notice">${escapeHtml(notice)}</div>` : ''}
           <section class="policy">
             <div class="policy-header">
               <div>
-                <p class="eyebrow">${tf(locale, 'downloadCenter', 'Download Center')}</p>
-                <h1>${tf(locale, 'sharedFiles', 'Shared files')}</h1>
-                <p>${tf(locale, 'sharedFilesText', 'Browse role-based files, inspect descriptions and tags, and download the version that is assigned to you.')}</p>
+                <p class="eyebrow">${tf(locale, 'forms', 'Forms')}</p>
+                <h1>${tf(locale, 'workflowForms', 'Workflow forms')}</h1>
+                <p>${tf(locale, 'workflowFormsText', 'Submit structured requests, review incoming submissions and keep access aligned to the right people and groups.')}</p>
               </div>
               <dl class="meta-grid">
-                <div><dt>${tf(locale, 'featureType', 'Feature')}</dt><dd>${tf(locale, 'fileExplorer', 'File explorer')}</dd></div>
-                <div><dt>${tf(locale, 'access', 'Access')}</dt><dd>${tf(locale, 'roleBased', 'Role based')}</dd></div>
-                <div><dt>${tf(locale, 'management', 'Management')}</dt><dd>${user.is_admin ? tf(locale, 'manageViaAdmin', 'Manageable in admin portal') : tf(locale, 'readOnly', 'Read only')}</dd></div>
+                <div><dt>${tf(locale, 'featureType', 'Feature')}</dt><dd>${tf(locale, 'structuredForms', 'Structured forms')}</dd></div>
+                <div><dt>${tf(locale, 'access', 'Access')}</dt><dd>${tf(locale, 'perFormAccess', 'Per-form access')}</dd></div>
+                <div><dt>${tf(locale, 'management', 'Management')}</dt><dd>${user.is_admin ? tf(locale, 'manageViaAdmin', 'Manageable in admin portal') : tf(locale, 'roleBased', 'Role based')}</dd></div>
               </dl>
             </div>
-            <div class="downloads-layout">
-              <div id="downloadExplorerEmpty" class="empty-state">
-                <h1>${tf(locale, 'loadingFiles', 'Loading files')}</h1>
-                <p>${tf(locale, 'loadingFilesText', 'The download center is fetching the latest directory tree for you.')}</p>
+            <div class="forms-layout">
+              <div id="formsEmptyState" class="empty-state">
+                <h1>${tf(locale, 'loadingForms', 'Loading forms')}</h1>
+                <p>${tf(locale, 'loadingFormsText', 'Atlas is fetching the forms you can access.')}</p>
               </div>
-              <div id="downloadFileView" class="panel download-detail-panel" hidden></div>
+              <div id="formDetailView" class="panel forms-detail-panel" hidden></div>
             </div>
           </section>
         </main>
@@ -1045,185 +1028,7 @@ function renderDownloadsPage({ user, locale, notice = '' }) {
       ${renderFooter(settings)}
     </div>
   `;
-  return renderShell({ title: tf(locale, 'downloadCenter', 'Download Center'), body, settings, locale });
-}
-
-function renderBlogIndexPage({ user, locale, notice = '' }) {
-  const settings = getSettings();
-  const posts = blogCatalog.posts.filter((post) => canReadBlogPost(user, post));
-  const featured = posts[0] || null;
-  const gridPosts = featured ? posts.slice(1) : posts;
-  const body = `
-    <div class="app-shell">
-      ${renderTopbar(user, locale, '/blog')}
-      <main class="content blog-page">
-        ${notice ? `<div class="notice">${escapeHtml(notice)}</div>` : ''}
-        <section class="policy">
-          <div class="policy-header blog-index-header">
-            <div>
-              <p class="eyebrow">${tf(locale, 'blog', 'Blog')}</p>
-              <h1>${tf(locale, 'latestStories', 'Latest stories from Atlas')}</h1>
-              <p>${tf(locale, 'latestStoriesText', 'Share updates, release notes, internal announcements and team insights in a format that works both in the browser and directly from Markdown files.')}</p>
-            </div>
-            <dl class="meta-grid">
-              <div><dt>${tf(locale, 'posts', 'Posts')}</dt><dd>${posts.length}</dd></div>
-              <div><dt>${tf(locale, 'latest', 'Latest')}</dt><dd>${featured ? escapeHtml(formatDisplayDate(featured.publishedAt, locale)) : '-'}</dd></div>
-              <div><dt>${tf(locale, 'editing', 'Editing')}</dt><dd>${canManageBlog(user) ? `<a href="/blog-studio">${tf(locale, 'openStudio', 'Open studio')}</a>` : tf(locale, 'markdownBased', 'Markdown based')}</dd></div>
-            </dl>
-          </div>
-          ${featured ? renderFeaturedBlogCard(featured, locale) : ''}
-          ${gridPosts.length ? `<div class="blog-card-grid">${gridPosts.map((post) => renderBlogCard(post, locale)).join('')}</div>` : (!featured ? renderBlogEmptyState(locale, canManageBlog(user)) : '')}
-        </section>
-      </main>
-      ${renderFooter(settings)}
-    </div>
-  `;
-  return renderShell({ title: tf(locale, 'blog', 'Blog'), body, settings, locale });
-}
-
-function renderFeaturedBlogCard(post, locale) {
-  return `
-    <a class="featured-blog-card" href="/blog/${encodeURIComponent(post.slug)}">
-      ${post.coverImage ? `<div class="featured-blog-media"><img src="${escapeAttribute(post.coverImage)}" alt=""></div>` : ''}
-      <div class="featured-blog-copy">
-        <span class="feature-card-label">${tf(locale, 'featuredPost', 'Featured post')}</span>
-        <h2>${escapeHtml(post.title)}</h2>
-        <p>${escapeHtml(post.excerpt || post.description || '')}</p>
-        <div class="blog-card-meta">
-          <span>${escapeHtml(formatDisplayDate(post.publishedAt, locale))}</span>
-          <span>${escapeHtml(post.author || tf(locale, 'editorialTeam', 'Editorial team'))}</span>
-        </div>
-      </div>
-    </a>
-  `;
-}
-
-function renderBlogCard(post, locale) {
-  return `
-    <a class="blog-card" href="/blog/${encodeURIComponent(post.slug)}">
-      ${post.coverImage ? `<div class="blog-card-media"><img src="${escapeAttribute(post.coverImage)}" alt=""></div>` : ''}
-      <div class="blog-card-body">
-        <div class="blog-card-meta">
-          <span>${escapeHtml(formatDisplayDate(post.publishedAt, locale))}</span>
-          <span>${escapeHtml(post.author || tf(locale, 'editorialTeam', 'Editorial team'))}</span>
-        </div>
-        <h2>${escapeHtml(post.title)}</h2>
-        <p>${escapeHtml(post.excerpt || post.description || '')}</p>
-      </div>
-    </a>
-  `;
-}
-
-function renderBlogPostPage({ user, locale, post }) {
-  const settings = getSettings();
-  const body = `
-    <div class="app-shell">
-      ${renderTopbar(user, locale, '/blog')}
-      <main class="content blog-page">
-        <article class="policy blog-article">
-          <nav class="breadcrumbs" aria-label="Breadcrumb">
-            <a class="crumb-home-icon" href="/" aria-label="Home">💠</a>
-            <span class="crumb-separator">›</span>
-            <a href="/blog">${tf(locale, 'blog', 'Blog')}</a>
-            <span class="crumb-separator">›</span>
-            <a class="current" href="/blog/${encodeURIComponent(post.slug)}">${escapeHtml(post.title)}</a>
-          </nav>
-          <header class="blog-hero">
-            ${post.coverImage ? `<div class="blog-hero-media"><img src="${escapeAttribute(post.coverImage)}" alt=""></div>` : ''}
-            <div class="blog-hero-copy">
-              ${canManageBlog(user) ? `<div class="policy-admin-actions"><a class="button ghost policy-admin-button" href="/blog-studio?post=${encodeURIComponent(post.slug)}">${tf(locale, 'editPost', 'Edit post')}</a></div>` : ''}
-              <p class="eyebrow">${tf(locale, 'blog', 'Blog')}</p>
-              <h1>${escapeHtml(post.title)}</h1>
-              <p>${escapeHtml(post.description || post.excerpt || '')}</p>
-              <div class="blog-card-meta">
-                <span>${escapeHtml(formatDisplayDate(post.publishedAt, locale))}</span>
-                <span>${escapeHtml(post.author || tf(locale, 'editorialTeam', 'Editorial team'))}</span>
-              </div>
-            </div>
-          </header>
-          <div class="policy-body">
-            <div class="markdown-body">${post.html}</div>
-            ${renderToc(post)}
-          </div>
-        </article>
-      </main>
-      ${renderFooter(settings)}
-    </div>
-  `;
-  return renderShell({ title: post.title, body, settings, locale });
-}
-
-function renderBlogEmptyState(locale, canEdit = false) {
-  return `
-    <section class="empty-state">
-      <h1>${tf(locale, 'noBlogPosts', 'No blog posts yet')}</h1>
-      <p>${canEdit ? tf(locale, 'noBlogPostsEditorText', 'Open Blog Studio to create the first article and publish it as Markdown.') : tf(locale, 'noBlogPostsText', 'No articles have been published yet. Please check back soon.')}</p>
-    </section>
-  `;
-}
-
-function renderBlogStudio(user, locale) {
-  const settings = getSettings();
-  const body = `
-    <div class="app-shell">
-      ${renderTopbar(user, locale, '/blog-studio')}
-      <main class="admin-page blog-studio-page">
-        <div class="admin-header">
-          <div>
-            <h1>${tf(locale, 'blogStudio', 'Blog Studio')}</h1>
-            <p class="hint">${tf(locale, 'blogStudioText', 'Create and edit Markdown blog posts, including cover image URLs and article metadata.')}</p>
-          </div>
-          <div class="panel-head-actions">
-            <a class="button ghost" href="/blog">${tf(locale, 'openBlog', 'Open blog')}</a>
-            <button class="button primary" type="button" data-new-blog-post>${tf(locale, 'createPost', 'Create post')}</button>
-          </div>
-        </div>
-        <div id="blogStudioError" class="notice admin-error" hidden></div>
-        <section class="admin-grid blog-studio-grid">
-          <div class="panel content-nav-panel">
-            <div class="panel-head">
-              <h2>${tf(locale, 'posts', 'Posts')}</h2>
-            </div>
-            <div id="blogPostTree" class="content-tree"></div>
-          </div>
-          <div class="panel content-editor-panel">
-            <div class="panel-head">
-              <h2 id="blogEditorTitle">${tf(locale, 'blogEditor', 'Blog editor')}</h2>
-            </div>
-            <div class="content-editor-body">
-              <div id="blogEditorEmpty" class="empty-state content-empty-state">
-                <h1>${tf(locale, 'selectPost', 'Select a blog post')}</h1>
-                <p>${tf(locale, 'selectPostText', 'Use the list on the left or create a new post to start writing.')}</p>
-              </div>
-              <form id="blogEditorForm" class="modal-form" hidden>
-                <input name="slug" type="hidden">
-                <div class="content-meta">
-                  <label>${tf(locale, 'postSlug', 'Post slug')} <input name="display_slug" readonly></label>
-                  <label>${tf(locale, 'filePath', 'File path')} <input name="relative_path" readonly></label>
-                  <label>${tf(locale, 'title', 'Title')} <input name="title" required></label>
-                  <label>${tf(locale, 'author', 'Author')} <input name="author"></label>
-                  <label>${tf(locale, 'publishedAt', 'Published at')} <input name="publishedAt" placeholder="2026-05-27"></label>
-                  <label>${tf(locale, 'coverImageUrl', 'Cover image URL')} <input name="coverImage" placeholder="https://..."></label>
-                  <label>${tf(locale, 'rolesCsv', 'Roles (comma separated)')} <input name="roles" placeholder="Users"></label>
-                </div>
-                <label>${tf(locale, 'description', 'Description')} <textarea name="description"></textarea></label>
-                <label>${tf(locale, 'excerpt', 'Excerpt')} <textarea name="excerpt"></textarea></label>
-                <label>${tf(locale, 'rawMarkdown', 'Raw Markdown')}
-                  <textarea name="markdown" class="code-input content-raw-input" spellcheck="false"></textarea>
-                </label>
-                <div class="modal-actions">
-                  <button class="button danger" type="button" data-delete-blog-post>${tf(locale, 'delete', 'Delete')}</button>
-                  <button class="button primary" type="submit">${t(locale, 'save')}</button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </section>
-      </main>
-      ${renderFooter(settings)}
-    </div>
-  `;
-  return renderShell({ title: tf(locale, 'blogStudio', 'Blog Studio'), body, settings, locale, scripts: ['blog-studio.js'] });
+  return renderShell({ title: tf(locale, 'forms', 'Forms'), body, settings, locale, scripts: ['forms.js'] });
 }
 
 function renderCmsIndexPage({ user, locale, notice = '' }) {
@@ -1370,8 +1175,19 @@ function renderCmsEmptyState(locale, canEdit = false) {
 function renderProfileDialog(user, locale) {
   return `
     <div class="profile-popover" data-profile-popover hidden>
-      <form class="profile-form" data-profile-form>
+      <div class="profile-popover-head">
         <h2>${t(locale, 'profileTitle')}</h2>
+        <button class="button" type="button" data-profile-close>${t(locale, 'close')}</button>
+      </div>
+      <div class="profile-shortcuts">
+        ${user.is_admin ? `<a class="button ghost profile-shortcut" href="/admin">${t(locale, 'admin')}</a>` : ''}
+        ${canManageCms(user) ? `<a class="button ghost profile-shortcut" href="/cms-studio">📄 ${tf(locale, 'cmsStudio', 'CMS Studio')}</a>` : ''}
+        <button class="button ghost profile-shortcut profile-theme-toggle" type="button" data-theme-toggle>
+          <span>${tf(locale, 'theme', 'Theme')}</span>
+          <span class="theme-toggle inline-theme-toggle" aria-hidden="true"><span></span></span>
+        </button>
+      </div>
+      <form class="profile-form" data-profile-form>
         <label>${t(locale, 'name')} <input name="name" value="${escapeHtml(user.name)}" required></label>
         <label>${t(locale, 'email')} <input name="email" type="email" value="${escapeHtml(user.email)}" required></label>
         <label>${t(locale, 'language')} ${renderLanguageSelect(user.language || '', locale)}</label>
@@ -1379,9 +1195,14 @@ function renderProfileDialog(user, locale) {
           <span>${t(locale, 'groups')}</span>
           <div>${renderRolePills(user.roles) || `<span class="hint">${t(locale, 'noGroups')}</span>`}</div>
         </div>
-        <button class="button" type="button" data-password-open>${t(locale, 'changePassword')}</button>
-        <div class="modal-actions"><button class="button" type="button" data-profile-close>${t(locale, 'close')}</button><button class="button primary" type="submit">${t(locale, 'save')}</button></div>
+        <div class="modal-actions"><button class="button primary" type="submit">${t(locale, 'save')}</button></div>
       </form>
+      <div class="profile-secondary-actions">
+        <button class="button" type="button" data-password-open>${t(locale, 'changePassword')}</button>
+        <form class="profile-logout-form" action="/api/logout" method="post">
+          <button class="button" type="submit">🚪 ${t(locale, 'logout')}</button>
+        </form>
+      </div>
     </div>
     <div class="modal-backdrop password-modal" data-password-modal hidden>
       <div class="modal">
@@ -1423,7 +1244,6 @@ function renderPolicy(policy, locale, user) {
     </article>
   `;
 }
-
 function renderPolicyAdminActions(policy, locale) {
   const pageHref = `/admin?tab=content&page=${encodeURIComponent(policy.slug)}`;
   const actions = [
@@ -1478,16 +1298,9 @@ function renderAdmin(user, locale) {
             <!--<p class="eyebrow">${t(locale, 'administration')}</p>-->
             <h1>${t(locale, 'adminPortal')}</h1>
           </div>
-          <button class="button primary" data-reload-content type="button">${t(locale, 'reloadMarkdown')}</button>
         </div>
         <div id="adminError" class="notice admin-error" hidden></div>
-        <nav class="admin-tabs" aria-label="${tf(locale, 'adminSections', 'Admin sections')}">
-          <button class="admin-tab-button" type="button" data-admin-tab="instance">${tf(locale, 'instanceSettings', 'Instance')}</button>
-          <button class="admin-tab-button" type="button" data-admin-tab="access">${tf(locale, 'accessManagement', 'Access')}</button>
-          <button class="admin-tab-button" type="button" data-admin-tab="plugins">${tf(locale, 'plugins', 'Plugins')}</button>
-          <button class="admin-tab-button active" type="button" data-admin-tab="content">${tf(locale, 'documentation', 'Documentation')}</button>
-          <button class="admin-tab-button" type="button" data-admin-tab="downloads">${tf(locale, 'downloadCenter', 'Download Center')}</button>
-        </nav>
+        ${renderAdminTabsNav(locale, { mode: 'buttons', activeTab: 'content' })}
         <section class="admin-grid">
           <div class="panel settings-panel" data-admin-panel="plugins">
             <div class="panel-head">
@@ -1495,102 +1308,19 @@ function renderAdmin(user, locale) {
             </div>
             <div id="pluginsPanel" class="plugin-grid content-editor-body"></div>
           </div>
-          <div class="panel content-nav-panel" data-admin-panel="content">
+          <div class="panel settings-panel" data-admin-panel="content">
             <div class="panel-head">
-              <h2>${tf(locale, 'documentation', 'Documentation')}</h2>
-              <div class="panel-head-actions">
-                <button class="button" data-new-category type="button">${tf(locale, 'createCategory', 'Create category')}</button>
-                <button class="button" data-new-page type="button">${tf(locale, 'createPage', 'Create page')}</button>
-              </div>
-            </div>
-            <div id="contentTree" class="content-tree"></div>
-          </div>
-          <div class="panel content-editor-panel" data-admin-panel="content">
-            <div class="panel-head">
-              <h2 id="contentEditorTitle">${tf(locale, 'contentEditor', 'Editor')}</h2>
+              <h2>${tf(locale, 'pages', 'Pages')}</h2>
             </div>
             <div class="content-editor-body">
-              <div id="contentEditorEmpty" class="empty-state content-empty-state">
-                <h1>${tf(locale, 'selectContentEntry', 'Select a page or category')}</h1>
-                <p>${tf(locale, 'selectContentEntryText', 'Admins can edit raw Markdown here and create new content without opening a file editor.')}</p>
+              <div class="empty-state content-empty-state">
+                <h1>${tf(locale, 'cmsStudio', 'CMS Studio')}</h1>
+                <p>${tf(locale, 'cmsStudioText', 'Create full-width Markdown or HTML-backed pages that appear in the Pages plugin.')}</p>
+                <div class="panel-head-actions">
+                  <a class="button ghost" href="/pages">${tf(locale, 'openPages', 'Open pages')}</a>
+                  <a class="button primary" href="/cms-studio">${tf(locale, 'openCmsStudio', 'Open CMS Studio')}</a>
+                </div>
               </div>
-              <form id="pageEditorForm" class="modal-form" hidden>
-                <input name="slug" type="hidden">
-                <input name="extra_meta" type="hidden">
-                <div class="content-meta">
-                  <label>${tf(locale, 'pageSlug', 'Page slug')} <input name="display_slug" readonly></label>
-                  <label>${tf(locale, 'filePath', 'File path')} <input name="relative_path" readonly></label>
-                </div>
-                <div class="content-meta">
-                  <label>${tf(locale, 'title', 'Title')} <input name="title"></label>
-                  <label>${tf(locale, 'description', 'Description')} <input name="description"></label>
-                  <label>${tf(locale, 'owner', 'Owner')} <input name="owner"></label>
-                  <label>${tf(locale, 'version', 'Version')} <input name="version"></label>
-                  <label>${tf(locale, 'review', 'Review date')} <input name="reviewDate" placeholder="2026-12-31"></label>
-                  <label>${tf(locale, 'position', 'Position')} <input name="position" type="number" step="1" value="999"></label>
-                  <label>${tf(locale, 'rolesCsv', 'Roles (comma separated)')} <input name="roles" placeholder="Admins, Users"></label>
-                </div>
-                <label>${tf(locale, 'rawMarkdown', 'Raw Markdown')}
-                  <textarea name="markdown" class="code-input content-raw-input" spellcheck="false"></textarea>
-                </label>
-                <div class="modal-actions">
-                  <button class="button primary" type="submit">${t(locale, 'save')}</button>
-                </div>
-              </form>
-              <form id="categoryEditorForm" class="modal-form" hidden>
-                <input name="relative_dir" type="hidden">
-                <div class="content-meta">
-                  <label>${tf(locale, 'categoryPath', 'Category path')} <input name="display_dir" readonly></label>
-                  <label>${tf(locale, 'categoryConfigPath', 'Config file')} <input name="config_path" readonly></label>
-                </div>
-                <label>${tf(locale, 'label', 'Label')} <input name="label" required></label>
-                <label>${tf(locale, 'position', 'Position')} <input name="position" type="number" step="1" value="999"></label>
-                <label>${tf(locale, 'rolesCsv', 'Roles (comma separated)')} <input name="roles" placeholder="Admins, Users"></label>
-                <div class="modal-actions">
-                  <button class="button primary" type="submit">${t(locale, 'save')}</button>
-                </div>
-              </form>
-            </div>
-          </div>
-          <div class="panel content-nav-panel" data-admin-panel="downloads">
-            <div class="panel-head">
-              <h2>${tf(locale, 'downloadCenter', 'Download Center')}</h2>
-              <div class="panel-head-actions">
-                <button class="button" data-new-download type="button">${tf(locale, 'uploadFile', 'Upload file')}</button>
-              </div>
-            </div>
-            <div id="downloadsTree" class="content-tree"></div>
-          </div>
-          <div class="panel content-editor-panel" data-admin-panel="downloads">
-            <div class="panel-head">
-              <h2 id="downloadEditorTitle">${tf(locale, 'downloadEditor', 'Download editor')}</h2>
-            </div>
-            <div class="content-editor-body">
-              <div id="downloadEditorEmpty" class="empty-state content-empty-state">
-                <h1>${tf(locale, 'selectDownloadEntry', 'Select a file')}</h1>
-                <p>${tf(locale, 'selectDownloadEntryText', 'Upload files, assign roles, edit descriptions and update text-based files directly in the browser.')}</p>
-              </div>
-              <form id="downloadEditorForm" class="modal-form" hidden>
-                <input name="id" type="hidden">
-                <input name="content_base64" type="hidden">
-                <input name="encoding" type="hidden" value="text">
-                <div class="content-meta">
-                  <label>${tf(locale, 'fileName', 'File name')} <input name="name" required></label>
-                  <label>${tf(locale, 'folderPath', 'Folder path')} <input name="relative_dir" placeholder="team/templates"></label>
-                  <label>${tf(locale, 'mimeType', 'MIME type')} <input name="mime_type" placeholder="text/markdown"></label>
-                  <label>${tf(locale, 'rolesCsv', 'Roles (comma separated)')} <input name="roles" placeholder="Admins, Users"></label>
-                </div>
-                <label>${tf(locale, 'description', 'Description')} <textarea name="description"></textarea></label>
-                <label>${tf(locale, 'tagsCsv', 'Tags (comma separated)')} <input name="tags" placeholder="template, onboarding"></label>
-                <label>${tf(locale, 'replaceUpload', 'Replace via upload')} <input name="file_upload" type="file"></label>
-                <label>${tf(locale, 'textContent', 'Text content')}
-                  <textarea name="content_text" class="code-input content-raw-input" spellcheck="false"></textarea>
-                </label>
-                <div class="modal-actions">
-                  <button class="button danger" id="deleteDownloadButton" type="button">${tf(locale, 'delete', 'Delete')}</button>
-                  <button class="button primary" type="submit">${t(locale, 'save')}</button>
-                </div>
-              </form>
             </div>
           </div>
           <div class="panel" data-admin-panel="access">
@@ -1681,6 +1411,45 @@ function renderAdmin(user, locale) {
   return renderShell({ title: t(locale, 'admin'), body, admin: true, settings, locale });
 }
 
+function renderAdminTabsNav(locale, { mode = 'buttons', activeTab = '', activePluginKey = '' } = {}) {
+  const pluginAdminPages = loadedPlugins.filter((plugin) => plugin.adminPage);
+  const items = [
+    { key: 'instance', label: tf(locale, 'instanceSettings', 'Instance') },
+    { key: 'access', label: tf(locale, 'accessManagement', 'Access') },
+    { key: 'plugins', label: tf(locale, 'plugins', 'Plugins') },
+    { key: 'content', label: tf(locale, 'pages', 'Pages') }
+  ];
+  const renderItem = (item) => {
+    const activeClass = item.key === activeTab ? ' active' : '';
+    if (mode === 'links') {
+      return `<a class="admin-tab-button${activeClass}" href="/admin?tab=${escapeAttribute(item.key)}">${escapeHtml(item.label)}</a>`;
+    }
+    return `<button class="admin-tab-button${activeClass}" type="button" data-admin-tab="${escapeAttribute(item.key)}">${escapeHtml(item.label)}</button>`;
+  };
+  const hasActivePlugin = pluginAdminPages.some((plugin) => plugin.key === activePluginKey);
+  const pluginMenu = pluginAdminPages.length
+    ? `
+      <details class="admin-plugin-menu ${hasActivePlugin ? 'is-active' : ''}" ${hasActivePlugin ? 'open' : ''}>
+        <summary class="admin-tab-button${hasActivePlugin ? ' active' : ''}">${tf(locale, 'pluginPages', 'Plugin pages')}</summary>
+        <div class="admin-plugin-menu-list">
+          ${pluginAdminPages.map((plugin) => `
+            <a class="admin-plugin-menu-link ${plugin.key === activePluginKey ? 'active' : ''}" href="${escapeHtml(plugin.adminPage.href)}">
+              <strong>${escapeHtml(plugin.adminPage.label)}</strong>
+              <span>${escapeHtml(plugin.feature.description)}</span>
+            </a>
+          `).join('')}
+        </div>
+      </details>
+    `
+    : '';
+  return `
+    <nav class="admin-tabs" aria-label="${tf(locale, 'adminSections', 'Admin sections')}">
+      ${items.map(renderItem).join('')}
+      ${pluginMenu}
+    </nav>
+  `;
+}
+
 function renderLogin(req, user, locale) {
   const settings = getSettings();
   if (user) return renderShell({ title: t(locale, 'login'), body: '<meta http-equiv="refresh" content="0; url=/">', settings, locale });
@@ -1738,7 +1507,9 @@ function renderShell({ title, body, admin = false, settings = getSettings(), loc
   const cssUrl = assetUrl('app.css');
   const appJsUrl = assetUrl('app.js');
   const adminScript = admin ? inlineScriptTag('admin.js') : '';
-  const extraScripts = scripts.map((file) => `<script defer src="${assetUrl(file)}"></script>`).join('');
+  const extraScripts = scripts
+    .map((file) => `<script defer src="${String(file).startsWith('/') ? file : assetUrl(file)}"></script>`)
+    .join('');
   return `<!doctype html>
     <html lang="${escapeHtml(locale)}" style="--primary-light: ${lightThemeColor}; --primary-dark-mode: ${darkThemeColor}; --bg-light-base: ${lightBgColor}; --bg-dark-base: ${darkBgColor}; --bg-light-glow: ${lightBgGlow}; --bg-dark-glow: ${darkBgGlow}; --surface-light-base: ${lightUiColor}; --surface-dark-base: ${darkUiColor}; --surface-light: ${lightUiSurface}; --surface-light-strong: ${lightUiStrong}; --surface-light-soft: ${lightUiSoft}; --surface-light-elevated: ${lightUiElevated}; --surface-dark: ${darkUiSurface}; --surface-dark-strong: ${darkUiStrong}; --surface-dark-soft: ${darkUiSoft}; --surface-dark-elevated: ${darkUiElevated};">
       <head>
@@ -1917,10 +1688,8 @@ async function handleFactoryReset(req, res) {
 
   logWarn('Factory reset confirmed by admin');
   resetDatabaseToFactoryDefaults();
-  catalog = loadCatalog();
-  blogCatalog = loadBlogCatalog();
   cmsCatalog = loadCmsCatalog();
-  logInfo(`Factory reset reloaded catalog with ${catalog.policies.length} documents, ${blogCatalog.posts.length} blog posts and ${cmsCatalog.pages.length} CMS pages`);
+  logInfo(`Factory reset reloaded CMS with ${cmsCatalog.pages.length} pages`);
   clearSessionCookie(res);
   sendJson(res, 200, { ok: true });
 }
@@ -2191,112 +1960,6 @@ async function handleSaveEditableCategory(req, res) {
   sendJson(res, 200, { ok: true, relativeDir });
 }
 
-function getBlogStudioTree() {
-  return {
-    tree: blogCatalog.posts.map((post) => ({
-      slug: post.slug,
-      title: post.title,
-      publishedAt: post.publishedAt,
-      coverImage: post.coverImage,
-      relativePath: toContentRelativePath(post.file)
-    }))
-  };
-}
-
-function getEditableBlogPost(slug) {
-  const safeSlug = sanitizeSlugSegment(slug);
-  if (!safeSlug) return null;
-  const filePath = normalize(join(BLOG_DIR, `${safeSlug}.md`));
-  if (!filePath.startsWith(BLOG_DIR) || !existsSync(filePath)) return null;
-  const raw = readFileSync(filePath, 'utf8');
-  const parsed = parseFrontmatter(raw);
-  return {
-    slug: safeSlug,
-    filePath,
-    relativePath: toContentRelativePath(filePath),
-    markdown: parsed.markdown,
-    meta: {
-      title: String(parsed.meta.title || '').trim(),
-      description: String(parsed.meta.description || '').trim(),
-      excerpt: String(parsed.meta.excerpt || '').trim(),
-      author: String(parsed.meta.author || '').trim(),
-      coverImage: String(parsed.meta.coverImage || '').trim(),
-      publishedAt: String(parsed.meta.publishedAt || parsed.meta.date || '').trim(),
-      roles: Array.isArray(parsed.meta.roles) ? parsed.meta.roles : []
-    }
-  };
-}
-
-function handleGetBlogStudioPost(res, url) {
-  const slug = String(url.searchParams.get('slug') || '').trim();
-  const post = getEditableBlogPost(slug);
-  if (!post) return sendJson(res, 404, { error: 'Blog post not found.' });
-  sendJson(res, 200, post);
-}
-
-async function handleSaveBlogStudioPost(req, res, user) {
-  const payload = await readJson(req);
-  const mode = payload.mode === 'create' ? 'create' : 'update';
-  const slug = sanitizeSlugSegment(payload.slug);
-  const title = String(payload.title || '').trim();
-  const description = String(payload.description || '').trim();
-  const excerpt = String(payload.excerpt || '').trim();
-  const author = String(payload.author || user.name || '').trim();
-  const coverImage = String(payload.coverImage || '').trim();
-  const publishedAt = String(payload.publishedAt || '').trim();
-  const roles = normalizeRoleList(payload.roles);
-  const markdown = String(payload.markdown || '');
-
-  if (!slug) return sendJson(res, 400, { error: 'A blog slug is required.' });
-  if (!title) return sendJson(res, 400, { error: 'A blog title is required.' });
-
-  const filePath = normalize(join(BLOG_DIR, `${slug}.md`));
-  if (!filePath.startsWith(BLOG_DIR)) return sendJson(res, 400, { error: 'Invalid blog path.' });
-  if (mode === 'create' && existsSync(filePath)) return sendJson(res, 409, { error: 'This blog post already exists.' });
-  if (mode === 'update' && !existsSync(filePath)) return sendJson(res, 404, { error: 'Blog post not found.' });
-
-  const meta = {
-    title,
-    description,
-    excerpt,
-    author,
-    publishedAt: publishedAt || new Date().toISOString().slice(0, 10),
-    coverImage,
-    roles
-  };
-  const raw = serializeBlogPost({
-    meta,
-    markdown: markdown.trim() || `# ${title}\n\nWrite your story here.\n`
-  });
-  writeFileSync(filePath, ensureTrailingNewline(raw), 'utf8');
-  blogCatalog = loadBlogCatalog();
-  logInfo(`Blog post ${mode === 'create' ? 'created' : 'updated'}: ${slug}`, { file: filePath });
-  sendJson(res, 200, { ok: true, slug });
-}
-
-function handleDeleteBlogStudioPost(res, pathname) {
-  const slug = sanitizeSlugSegment(decodeURIComponent(pathname.split('/').pop() || ''));
-  if (!slug) return sendJson(res, 400, { error: 'Invalid blog slug.' });
-  const filePath = normalize(join(BLOG_DIR, `${slug}.md`));
-  if (!filePath.startsWith(BLOG_DIR) || !existsSync(filePath)) return sendJson(res, 404, { error: 'Blog post not found.' });
-  unlinkSync(filePath);
-  blogCatalog = loadBlogCatalog();
-  sendJson(res, 200, { ok: true });
-}
-
-function serializeBlogPost({ meta, markdown = '' }) {
-  const lines = ['---'];
-  lines.push(`title: ${String(meta.title || '').trim()}`);
-  if (meta.description) lines.push(`description: ${String(meta.description).trim()}`);
-  if (meta.excerpt) lines.push(`excerpt: ${String(meta.excerpt).trim()}`);
-  if (meta.author) lines.push(`author: ${String(meta.author).trim()}`);
-  if (meta.publishedAt) lines.push(`publishedAt: ${String(meta.publishedAt).trim()}`);
-  if (meta.coverImage) lines.push(`coverImage: ${String(meta.coverImage).trim()}`);
-  lines.push(`roles: [${normalizeRoleList(meta.roles).join(', ')}]`);
-  lines.push('---', '', String(markdown || '').replace(/\r\n/g, '\n').replace(/^\n+/, ''));
-  return lines.join('\n');
-}
-
 function getCmsStudioTree() {
   return {
     tree: cmsCatalog.pages.map((page) => ({
@@ -2509,102 +2172,6 @@ function normalizeTagList(value) {
   return Array.from(new Set(items.map((item) => String(item).trim()).filter(Boolean)));
 }
 
-function createStoredDownloadName(fileName) {
-  const safeName = sanitizeFileName(fileName) || 'file';
-  return `${Date.now()}-${randomBytes(6).toString('hex')}-${safeName}`;
-}
-
-function getDownloadStoragePath(storageName) {
-  const target = normalize(join(DOWNLOADS_DIR, storageName));
-  if (!target.startsWith(DOWNLOADS_DIR)) throw new Error('Invalid download storage path.');
-  return target;
-}
-
-function inferMimeType(fileName, fallback = 'application/octet-stream') {
-  const extension = extname(String(fileName || '')).toLowerCase();
-  return ({
-    '.txt': 'text/plain',
-    '.md': 'text/markdown',
-    '.markdown': 'text/markdown',
-    '.json': 'application/json',
-    '.js': 'text/javascript',
-    '.mjs': 'text/javascript',
-    '.cjs': 'text/javascript',
-    '.css': 'text/css',
-    '.html': 'text/html',
-    '.xml': 'application/xml',
-    '.csv': 'text/csv',
-    '.tsv': 'text/tab-separated-values',
-    '.svg': 'image/svg+xml',
-    '.pdf': 'application/pdf',
-    '.png': 'image/png',
-    '.jpg': 'image/jpeg',
-    '.jpeg': 'image/jpeg',
-    '.gif': 'image/gif',
-    '.webp': 'image/webp',
-    '.zip': 'application/zip',
-    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
-  })[extension] || fallback;
-}
-
-function isTextLikeFile(fileName = '', mimeType = '') {
-  const extension = extname(String(fileName || '')).toLowerCase();
-  if (String(mimeType || '').startsWith('text/')) return true;
-  return ['.md', '.markdown', '.txt', '.json', '.js', '.mjs', '.cjs', '.css', '.html', '.xml', '.csv', '.tsv', '.svg'].includes(extension);
-}
-
-function parseTagsJson(value = '[]') {
-  try {
-    const tags = JSON.parse(value);
-    return Array.isArray(tags) ? tags.map(String).map((item) => item.trim()).filter(Boolean) : [];
-  } catch {
-    return [];
-  }
-}
-
-function normalizeDownloadRecord(row) {
-  const roles = db.prepare(`
-    SELECT r.name FROM roles r
-    JOIN download_file_roles dfr ON dfr.role_id = r.id
-    WHERE dfr.file_id = ?
-    ORDER BY r.name
-  `).all(row.id).map((item) => item.name);
-  return {
-    id: row.id,
-    name: row.name,
-    relativeDir: row.relative_dir || '',
-    relativePath: row.relative_dir ? `${row.relative_dir}/${row.name}` : row.name,
-    description: row.description || '',
-    tags: parseTagsJson(row.tags_json),
-    roles,
-    mimeType: row.mime_type || inferMimeType(row.name),
-    encoding: row.encoding || 'binary',
-    fileSize: Number(row.file_size || 0),
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    isText: row.encoding === 'text' || isTextLikeFile(row.name, row.mime_type),
-    downloadHref: `/download/${row.id}`
-  };
-}
-
-function loadBlogCatalog() {
-  logInfo(`Loading blog catalog from ${BLOG_DIR}`);
-  if (!existsSync(BLOG_DIR)) {
-    mkdirSync(BLOG_DIR, { recursive: true });
-    return { posts: [], bySlug: new Map() };
-  }
-
-  const posts = readdirSync(BLOG_DIR)
-    .filter((file) => file.endsWith('.md'))
-    .map((file) => createBlogPost(join(BLOG_DIR, file), file.replace(/\.md$/i, '')))
-    .sort((a, b) => compareBlogPosts(b, a));
-  const bySlug = new Map(posts.map((post) => [post.slug, post]));
-  logInfo(`Blog catalog loaded: ${posts.length} posts`);
-  return { posts, bySlug };
-}
-
 function loadCmsCatalog() {
   logInfo(`Loading CMS catalog from ${CMS_DIR}`);
   if (!existsSync(CMS_DIR)) {
@@ -2641,228 +2208,437 @@ function createCmsPage(filePath, slug) {
   };
 }
 
-function createBlogPost(filePath, slug) {
-  const raw = readFileSync(filePath, 'utf8');
-  const { meta, markdown } = parseFrontmatter(raw);
-  const rendered = markdownToHtml(markdown, `blog/${slug}`);
-  const stats = statSync(filePath);
-  const publishedAt = normalizeBlogDate(meta.publishedAt || meta.date || meta.published || '');
-  const updatedAt = normalizeBlogDate(meta.updatedAt || '') || stats.mtime.toISOString();
-  const roles = Array.isArray(meta.roles) ? meta.roles : [];
+
+const FORM_PERMISSION_KEYS = ['manage', 'view', 'evaluate', 'submit'];
+const FORM_FIELD_TYPES = new Set(['text', 'textarea', 'email', 'select', 'date', 'number', 'checkbox', 'divider']);
+const FORM_SUBMISSION_STATUSES = new Set(['submitted', 'in_review', 'approved', 'rejected']);
+
+function normalizeEmailList(values) {
+  const list = Array.isArray(values) ? values : [values];
+  return Array.from(new Set(list
+    .flatMap((value) => String(value || '').split(/[,\n]/))
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean)));
+}
+
+function normalizeFormPermissionEntry(value) {
   return {
-    slug,
-    file: filePath,
-    title: meta.title || titleFromSlug(slug),
-    description: meta.description || '',
-    excerpt: meta.excerpt || meta.description || '',
-    author: meta.author || '',
-    coverImage: meta.coverImage || '',
-    publishedAt: publishedAt || stats.mtime.toISOString(),
-    updatedAt,
-    roles,
-    html: rendered.html,
-    headings: rendered.headings,
-    markdown
+    roles: normalizeRoleList(value?.roles || []),
+    users: normalizeEmailList(value?.users || [])
   };
 }
 
-function normalizeBlogDate(value = '') {
-  const text = String(value || '').trim();
-  if (!text) return '';
-  const date = new Date(text);
-  return Number.isNaN(date.getTime()) ? '' : date.toISOString();
+function normalizeFormPermissions(value) {
+  const source = value && typeof value === 'object' ? value : {};
+  const normalized = {};
+  for (const key of FORM_PERMISSION_KEYS) normalized[key] = normalizeFormPermissionEntry(source[key]);
+  return normalized;
 }
 
-function compareBlogPosts(a, b) {
-  return new Date(a.publishedAt).getTime() - new Date(b.publishedAt).getTime();
+function normalizeFormFieldKey(value, fallback = 'field') {
+  const base = slugify(String(value || '').trim()) || slugify(fallback) || 'field';
+  return base.replace(/-/g, '_');
 }
 
-function listDownloadFiles() {
-  return db.prepare('SELECT * FROM download_files ORDER BY relative_dir, name').all().map(normalizeDownloadRecord);
+function normalizeFormFieldVisibility(value) {
+  const fieldKey = normalizeFormFieldKey(value?.fieldKey || value?.field_key || '', '');
+  if (!fieldKey) return null;
+  const mode = String(value?.mode || '').trim() === 'equals' ? 'equals' : 'filled';
+  const expectedValue = mode === 'equals' ? String(value?.expectedValue ?? value?.expected_value ?? '').trim() : '';
+  return { fieldKey, mode, expectedValue };
 }
 
-function canReadDownloadFile(user, file) {
-  if (user?.is_admin) return true;
-  if (!file.roles.length) return true;
-  return file.roles.some((role) => user.roles.includes(role));
-}
+function normalizeFormFields(value) {
+  const list = Array.isArray(value) ? value : [];
+  const usedKeys = new Set();
+  const normalized = [];
 
-function buildDownloadTree(files) {
-  const root = [];
-  const nodes = new Map([['', root]]);
-
-  const ensureDir = (relativeDir) => {
-    const normalizedDir = sanitizeExplorerDir(relativeDir);
-    if (nodes.has(normalizedDir)) return nodes.get(normalizedDir);
-    const parts = normalizedDir.split('/').filter(Boolean);
-    const currentDir = parts.join('/');
-    const parentDir = parts.slice(0, -1).join('/');
-    const parent = ensureDir(parentDir);
-    const node = [];
-    parent.push({
-      type: 'directory',
-      relativeDir: currentDir,
-      label: parts[parts.length - 1],
-      children: node
-    });
-    nodes.set(currentDir, node);
-    return node;
-  };
-
-  for (const file of files) {
-    const bucket = ensureDir(file.relativeDir || '');
-    bucket.push({
-      type: 'file',
-      ...file
+  for (const [index, field] of list.entries()) {
+    const label = String(field?.label || '').trim();
+    const type = FORM_FIELD_TYPES.has(String(field?.type || '').trim()) ? String(field.type).trim() : 'text';
+    let key = type === 'divider'
+      ? normalizeFormFieldKey(field?.key || label || `divider_${index + 1}`, `divider_${index + 1}`)
+      : normalizeFormFieldKey(field?.key || label || `field_${index + 1}`, `field_${index + 1}`);
+    while (usedKeys.has(key)) key = `${key}_${index + 1}`;
+    usedKeys.add(key);
+    const visibility = normalizeFormFieldVisibility(field?.visibility);
+    normalized.push({
+      key,
+      label: label || (type === 'divider' ? 'Section' : titleFromSlug(key.replace(/_/g, '-'))),
+      type,
+      required: type === 'divider' ? false : Boolean(field?.required),
+      placeholder: String(field?.placeholder || '').trim(),
+      helpText: String(field?.helpText || '').trim(),
+      options: type === 'select' ? normalizeTagList(field?.options || []) : [],
+      visibility
     });
   }
 
-  const sortNodes = (items) => {
-    items.sort((a, b) => {
-      if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
-      return String(a.label || a.name).localeCompare(String(b.label || b.name), 'de');
-    });
-    for (const item of items) {
-      if (item.type === 'directory') sortNodes(item.children || []);
-    }
-    return items;
-  };
-
-  return sortNodes(root);
+  return normalized;
 }
 
-function getDownloadAdminTree() {
-  const files = listDownloadFiles();
-  const directories = [{ relativeDir: '', label: 'Root' }];
-  for (const file of files) {
-    const parts = String(file.relativeDir || '').split('/').filter(Boolean);
-    for (let index = 0; index < parts.length; index += 1) {
-      const relativeDir = parts.slice(0, index + 1).join('/');
-      if (!directories.some((item) => item.relativeDir === relativeDir)) {
-        directories.push({ relativeDir, label: parts[index] });
-      }
-    }
+function normalizeFormStatus(value) {
+  return String(value || '').trim().toLowerCase() === 'archived' ? 'archived' : 'active';
+}
+
+function parseJsonObject(value, fallback) {
+  try {
+    return JSON.parse(String(value || ''));
+  } catch {
+    return fallback;
   }
-  return { tree: buildDownloadTree(files), directories };
 }
 
-function getDownloadTreeForUser(user) {
-  const files = listDownloadFiles().filter((file) => canReadDownloadFile(user, file));
-  return { tree: buildDownloadTree(files) };
+function normalizeFormRecord(row) {
+  const permissions = normalizeFormPermissions(parseJsonObject(row.permissions_json, {}));
+  const fields = normalizeFormFields(parseJsonObject(row.fields_json, []));
+  const creator = row.creator_email ? {
+    id: row.creator_user_id || null,
+    name: row.creator_name || row.creator_email,
+    email: row.creator_email
+  } : null;
+
+  return {
+    id: row.id,
+    slug: row.slug,
+    title: row.title,
+    description: row.description || '',
+    introText: row.intro_text || '',
+    status: normalizeFormStatus(row.status),
+    permissions,
+    fields,
+    creator,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
 }
 
-function getDownloadFileById(id) {
+function listFormsAdmin() {
+  return db.prepare(`
+    SELECT
+      f.*,
+      u.name AS creator_name,
+      u.email AS creator_email
+    FROM forms f
+    LEFT JOIN users u ON u.id = f.creator_user_id
+    ORDER BY f.title, f.slug
+  `).all().map(normalizeFormRecord);
+}
+
+function getFormBySlug(slug) {
+  const value = String(slug || '').trim();
+  if (!value) return null;
+  const row = db.prepare(`
+    SELECT
+      f.*,
+      u.name AS creator_name,
+      u.email AS creator_email
+    FROM forms f
+    LEFT JOIN users u ON u.id = f.creator_user_id
+    WHERE f.slug = ?
+  `).get(value);
+  return row ? normalizeFormRecord(row) : null;
+}
+
+function getFormById(id) {
   const numericId = Number(id);
   if (!Number.isInteger(numericId) || numericId <= 0) return null;
-  const row = db.prepare('SELECT * FROM download_files WHERE id = ?').get(numericId);
-  return row ? normalizeDownloadRecord(row) : null;
+  const row = db.prepare(`
+    SELECT
+      f.*,
+      u.name AS creator_name,
+      u.email AS creator_email
+    FROM forms f
+    LEFT JOIN users u ON u.id = f.creator_user_id
+    WHERE f.id = ?
+  `).get(numericId);
+  return row ? normalizeFormRecord(row) : null;
 }
 
-function setDownloadFileRoles(fileId, roleNames) {
-  db.prepare('DELETE FROM download_file_roles WHERE file_id = ?').run(fileId);
-  for (const roleName of normalizeRoleList(roleNames)) {
-    const role = db.prepare('SELECT id FROM roles WHERE name = ?').get(roleName);
-    if (role) db.prepare('INSERT OR IGNORE INTO download_file_roles (file_id, role_id) VALUES (?, ?)').run(fileId, role.id);
-  }
+function getSubmissionCountByFormId() {
+  const rows = db.prepare('SELECT form_id, COUNT(*) AS count FROM form_submissions GROUP BY form_id').all();
+  return new Map(rows.map((row) => [row.form_id, row.count]));
 }
 
-function readDownloadTextContent(file) {
-  const row = db.prepare('SELECT storage_path FROM download_files WHERE id = ?').get(file.id);
-  if (!row?.storage_path || !existsSync(row.storage_path)) return '';
-  return readFileSync(row.storage_path, 'utf8');
+function canMatchFormPermission(user, scope) {
+  if (!user) return false;
+  if (user.is_admin) return true;
+  if (Array.isArray(scope?.users) && scope.users.includes(String(user.email || '').toLowerCase())) return true;
+  return Array.isArray(scope?.roles) && scope.roles.some((role) => user.roles.includes(role));
 }
 
-function handleGetDownloadFile(res, url, adminMode = false, user = null) {
-  const id = url.searchParams.get('id');
-  const file = getDownloadFileById(id);
-  if (!file) return sendJson(res, 404, { error: 'File not found.' });
-  if (!adminMode && !canReadDownloadFile(user, file)) return sendJson(res, 403, { error: 'You do not have access to this file.' });
-  const payload = {
-    ...file,
-    contentText: file.isText ? readDownloadTextContent(file) : ''
+function isFormCreator(user, form) {
+  return Boolean(user?.id && form?.creator?.id && Number(user.id) === Number(form.creator.id));
+}
+
+function canManageForm(user, form) {
+  return Boolean(user?.is_admin || isFormCreator(user, form) || canMatchFormPermission(user, form.permissions.manage));
+}
+
+function canEvaluateForm(user, form) {
+  return Boolean(canManageForm(user, form) || canMatchFormPermission(user, form.permissions.evaluate));
+}
+
+function canSubmitForm(user, form) {
+  return Boolean(canManageForm(user, form) || canMatchFormPermission(user, form.permissions.submit));
+}
+
+function canViewForm(user, form) {
+  return Boolean(canManageForm(user, form) || canEvaluateForm(user, form) || canSubmitForm(user, form) || canMatchFormPermission(user, form.permissions.view));
+}
+
+function listFormsForUser(user) {
+  const submissionCounts = getSubmissionCountByFormId();
+  return listFormsAdmin()
+    .filter((form) => form.status === 'active')
+    .map((form) => ({
+      ...form,
+      actions: {
+        canManage: canManageForm(user, form),
+        canView: canViewForm(user, form),
+        canEvaluate: canEvaluateForm(user, form),
+        canSubmit: canSubmitForm(user, form)
+      },
+      submissionCount: submissionCounts.get(form.id) || 0
+    }))
+    .filter((form) => form.actions.canView);
+}
+
+function getFormAdminTree() {
+  const submissionCounts = getSubmissionCountByFormId();
+  const tree = listFormsAdmin().map((form) => ({
+    id: form.id,
+    slug: form.slug,
+    title: form.title,
+    status: form.status,
+    submissionCount: submissionCounts.get(form.id) || 0,
+    updatedAt: form.updatedAt
+  }));
+  return { tree };
+}
+
+function getDefaultFormPayload() {
+  return {
+    title: 'User request',
+    description: 'Collect structured user requests and route them for review.',
+    introText: 'Please complete all relevant fields before submitting your request.',
+    status: 'active',
+    permissions: {
+      manage: { roles: ['Admins'], users: [] },
+      view: { roles: [], users: [] },
+      evaluate: { roles: ['Admins'], users: [] },
+      submit: { roles: ['Users'], users: [] }
+    },
+    fields: [
+      { key: 'request_title', label: 'Request title', type: 'text', required: true, placeholder: 'New user account for...', helpText: '', options: [] },
+      { key: 'department', label: 'Department', type: 'text', required: true, placeholder: 'Sales', helpText: '', options: [] },
+      { key: 'details', label: 'Details', type: 'textarea', required: true, placeholder: 'Describe what is needed and why.', helpText: '', options: [] },
+      { key: 'needed_by', label: 'Needed by', type: 'date', required: false, placeholder: '', helpText: '', options: [] }
+    ]
   };
-  sendJson(res, 200, payload);
 }
 
-async function handleSaveDownloadFile(req, res) {
+function handleGetAdminForm(res, url) {
+  const slug = url.searchParams.get('slug');
+  const id = url.searchParams.get('id');
+  const form = slug ? getFormBySlug(slug) : getFormById(id);
+  if (!form) return sendJson(res, 404, { error: 'Form not found.' });
+  sendJson(res, 200, form);
+}
+
+async function handleSaveAdminForm(req, res, user) {
   const payload = await readJson(req);
   const id = payload.id ? Number(payload.id) : null;
-  const name = sanitizeFileName(payload.name);
-  const relativeDir = sanitizeExplorerDir(payload.relative_dir || payload.relativeDir || '');
+  const title = String(payload.title || '').trim();
+  const slug = slugify(String(payload.slug || '').trim() || title);
   const description = String(payload.description || '').trim();
-  const tags = normalizeTagList(payload.tags);
-  const roles = normalizeRoleList(payload.roles);
-  const encoding = payload.encoding === 'binary' ? 'binary' : 'text';
-  const mimeType = String(payload.mime_type || payload.mimeType || '').trim() || inferMimeType(name);
-  const contentText = String(payload.content_text ?? payload.contentText ?? '');
-  const contentBase64 = String(payload.content_base64 ?? payload.contentBase64 ?? '').trim();
+  const introText = String(payload.introText || payload.intro_text || '').trim();
+  const status = normalizeFormStatus(payload.status);
+  const permissions = normalizeFormPermissions(payload.permissions);
+  const fields = normalizeFormFields(payload.fields);
 
-  if (!name) return sendJson(res, 400, { error: 'A file name is required.' });
+  if (!title) return sendJson(res, 400, { error: 'A form title is required.' });
+  if (!slug) return sendJson(res, 400, { error: 'A form slug is required.' });
+  if (!fields.length) return sendJson(res, 400, { error: 'Please add at least one form field.' });
 
-  let buffer = null;
-  if (contentBase64) {
-    buffer = Buffer.from(contentBase64, 'base64');
-  } else if (encoding === 'text') {
-    buffer = Buffer.from(contentText, 'utf8');
-  }
-
-  if (!id && !buffer) return sendJson(res, 400, { error: 'Please provide file content or upload a file.' });
+  const existingBySlug = getFormBySlug(slug);
+  if (existingBySlug && (!id || existingBySlug.id !== id)) return sendJson(res, 400, { error: 'This slug is already in use.' });
 
   if (!id) {
-    const storageName = createStoredDownloadName(name);
-    const storagePath = getDownloadStoragePath(storageName);
-    writeFileSync(storagePath, buffer);
     const result = db.prepare(`
-      INSERT INTO download_files (name, relative_dir, storage_name, storage_path, description, tags_json, mime_type, encoding, file_size, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    `).run(name, relativeDir, storageName, storagePath, description, JSON.stringify(tags), mimeType, encoding, buffer.length);
-    setDownloadFileRoles(result.lastInsertRowid, roles);
-    return sendJson(res, 200, { ok: true, id: result.lastInsertRowid });
+      INSERT INTO forms (slug, title, description, intro_text, creator_user_id, status, permissions_json, fields_json, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    `).run(slug, title, description, introText, user.id, status, JSON.stringify(permissions), JSON.stringify(fields));
+    return sendJson(res, 200, { ok: true, id: result.lastInsertRowid, slug });
   }
 
-  const current = db.prepare('SELECT * FROM download_files WHERE id = ?').get(id);
-  if (!current) return sendJson(res, 404, { error: 'File not found.' });
-  const nextEncoding = buffer ? encoding : (current.encoding || 'binary');
-  const nextMime = mimeType || current.mime_type;
-  const nextStoragePath = current.storage_path;
-  let fileSize = Number(current.file_size || 0);
-
-  if (buffer) {
-    writeFileSync(nextStoragePath, buffer);
-    fileSize = buffer.length;
-  }
-
+  const current = getFormById(id);
+  if (!current) return sendJson(res, 404, { error: 'Form not found.' });
   db.prepare(`
-    UPDATE download_files
-    SET name = ?, relative_dir = ?, description = ?, tags_json = ?, mime_type = ?, encoding = ?, file_size = ?, updated_at = CURRENT_TIMESTAMP
+    UPDATE forms
+    SET slug = ?, title = ?, description = ?, intro_text = ?, status = ?, permissions_json = ?, fields_json = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
-  `).run(name, relativeDir, description, JSON.stringify(tags), nextMime, nextEncoding, fileSize, id);
-  setDownloadFileRoles(id, roles);
-  sendJson(res, 200, { ok: true, id });
+  `).run(slug, title, description, introText, status, JSON.stringify(permissions), JSON.stringify(fields), id);
+  sendJson(res, 200, { ok: true, id, slug });
 }
 
-function handleDeleteDownloadFile(res, pathname) {
+function handleDeleteAdminForm(res, pathname) {
   const id = Number(pathname.split('/').pop());
-  const row = db.prepare('SELECT storage_path FROM download_files WHERE id = ?').get(id);
-  if (!row) return sendJson(res, 404, { error: 'File not found.' });
-  if (row.storage_path && existsSync(row.storage_path)) unlinkSync(row.storage_path);
-  db.prepare('DELETE FROM download_files WHERE id = ?').run(id);
+  const current = getFormById(id);
+  if (!current) return sendJson(res, 404, { error: 'Form not found.' });
+  db.prepare('DELETE FROM forms WHERE id = ?').run(id);
   sendJson(res, 200, { ok: true });
 }
 
-function handleDownloadAsset(res, pathname, user) {
-  const id = Number(pathname.slice('/download/'.length));
-  const file = getDownloadFileById(id);
-  if (!file) return sendText(res, 404, 'Not found');
-  if (!canReadDownloadFile(user, file)) return sendText(res, 403, 'Forbidden');
-  const row = db.prepare('SELECT storage_path FROM download_files WHERE id = ?').get(id);
-  if (!row?.storage_path || !existsSync(row.storage_path)) return sendText(res, 404, 'Not found');
-  res.writeHead(200, {
-    'content-type': file.mimeType,
-    'content-length': statSync(row.storage_path).size,
-    'content-disposition': `attachment; filename="${sanitizeFileName(file.name) || 'download'}"`
+function validateSubmissionValue(field, rawValue) {
+  if (field.type === 'divider') return '';
+  if (field.type === 'checkbox') return Boolean(rawValue);
+  const value = String(rawValue ?? '').trim();
+  if (field.required && !value) throw new Error(`Please fill "${field.label}".`);
+  if (!value) return '';
+  if (field.type === 'select' && field.options.length && !field.options.includes(value)) throw new Error(`Please choose a valid option for "${field.label}".`);
+  if (field.type === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) throw new Error(`Please enter a valid email for "${field.label}".`);
+  if (field.type === 'number' && Number.isNaN(Number(value))) throw new Error(`Please enter a number for "${field.label}".`);
+  return value;
+}
+
+function isFormFieldVisible(field, values) {
+  if (!field?.visibility?.fieldKey) return true;
+  const dependency = values[field.visibility.fieldKey];
+  if (field.visibility.mode === 'equals') return String(dependency ?? '').trim() === String(field.visibility.expectedValue || '');
+  if (typeof dependency === 'boolean') return dependency === true;
+  return String(dependency ?? '').trim() !== '';
+}
+
+function normalizeSubmissionValues(form, values) {
+  const source = values && typeof values === 'object' ? values : {};
+  const normalized = {};
+  for (const field of form.fields) {
+    const rawValue = source[field.key];
+    if (!isFormFieldVisible(field, { ...source, ...normalized })) {
+      normalized[field.key] = field.type === 'checkbox' ? false : '';
+      continue;
+    }
+    normalized[field.key] = validateSubmissionValue(field, rawValue);
+  }
+  return normalized;
+}
+
+function normalizeSubmissionStatus(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  return FORM_SUBMISSION_STATUSES.has(normalized) ? normalized : 'submitted';
+}
+
+function normalizeFormSubmissionRecord(row, form) {
+  const values = parseJsonObject(row.values_json, {});
+  return {
+    id: row.id,
+    formId: row.form_id,
+    formSlug: form.slug,
+    submitter: {
+      id: row.submitter_user_id || null,
+      name: row.submitter_name || row.submitter_email,
+      email: row.submitter_email
+    },
+    status: normalizeSubmissionStatus(row.status),
+    notes: row.notes || '',
+    values: form.fields
+      .filter((field) => field.type !== 'divider')
+      .map((field) => ({
+        key: field.key,
+        label: field.label,
+        type: field.type,
+        value: values[field.key] ?? (field.type === 'checkbox' ? false : ''),
+        visibility: field.visibility || null
+      })),
+    reviewedBy: row.reviewer_email ? {
+      id: row.reviewed_by_user_id || null,
+      name: row.reviewer_name || row.reviewer_email,
+      email: row.reviewer_email
+    } : null,
+    reviewedAt: row.reviewed_at || '',
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function listFormSubmissions(form, user) {
+  const rows = db.prepare(`
+    SELECT
+      s.*,
+      reviewer.name AS reviewer_name,
+      reviewer.email AS reviewer_email
+    FROM form_submissions s
+    LEFT JOIN users reviewer ON reviewer.id = s.reviewed_by_user_id
+    WHERE s.form_id = ?
+    ORDER BY s.created_at DESC, s.id DESC
+  `).all(form.id);
+
+  return rows
+    .filter((row) => canEvaluateForm(user, form) || Number(row.submitter_user_id) === Number(user.id))
+    .map((row) => normalizeFormSubmissionRecord(row, form));
+}
+
+function handleGetPublicForm(res, url, user) {
+  const form = getFormBySlug(url.searchParams.get('slug'));
+  if (!form || form.status !== 'active') return sendJson(res, 404, { error: 'Form not found.' });
+  if (!canViewForm(user, form)) return sendJson(res, 403, { error: 'You do not have access to this form.' });
+  sendJson(res, 200, {
+    ...form,
+    actions: {
+      canManage: canManageForm(user, form),
+      canView: canViewForm(user, form),
+      canEvaluate: canEvaluateForm(user, form),
+      canSubmit: canSubmitForm(user, form)
+    }
   });
-  res.end(readFileSync(row.storage_path));
+}
+
+async function handleSubmitForm(req, res, user) {
+  const payload = await readJson(req);
+  const form = getFormBySlug(payload.slug);
+  if (!form || form.status !== 'active') return sendJson(res, 404, { error: 'Form not found.' });
+  if (!canSubmitForm(user, form)) return sendJson(res, 403, { error: 'You do not have permission to submit this form.' });
+  const values = normalizeSubmissionValues(form, payload.values);
+  const result = db.prepare(`
+    INSERT INTO form_submissions (form_id, submitter_user_id, submitter_name, submitter_email, values_json, status, updated_at)
+    VALUES (?, ?, ?, ?, ?, 'submitted', CURRENT_TIMESTAMP)
+  `).run(form.id, user.id, user.name, user.email, JSON.stringify(values));
+  sendJson(res, 200, { ok: true, submissionId: result.lastInsertRowid });
+}
+
+function handleGetFormSubmissions(res, url, user) {
+  const form = getFormBySlug(url.searchParams.get('slug'));
+  if (!form || form.status !== 'active') return sendJson(res, 404, { error: 'Form not found.' });
+  if (!canViewForm(user, form)) return sendJson(res, 403, { error: 'You do not have access to this form.' });
+  sendJson(res, 200, {
+    form: {
+      id: form.id,
+      slug: form.slug,
+      title: form.title
+    },
+    canEvaluate: canEvaluateForm(user, form),
+    submissions: listFormSubmissions(form, user)
+  });
+}
+
+async function handleReviewFormSubmission(req, res, user) {
+  const payload = await readJson(req);
+  const submissionId = Number(payload.submissionId);
+  if (!Number.isInteger(submissionId) || submissionId <= 0) return sendJson(res, 400, { error: 'Submission not found.' });
+  const row = db.prepare('SELECT form_id FROM form_submissions WHERE id = ?').get(submissionId);
+  if (!row) return sendJson(res, 404, { error: 'Submission not found.' });
+  const form = getFormById(row.form_id);
+  if (!form) return sendJson(res, 404, { error: 'Form not found.' });
+  if (!canEvaluateForm(user, form)) return sendJson(res, 403, { error: 'You do not have permission to review this submission.' });
+  const status = normalizeSubmissionStatus(payload.status);
+  const notes = String(payload.notes || '').trim();
+  db.prepare(`
+    UPDATE form_submissions
+    SET status = ?, notes = ?, reviewed_by_user_id = ?, reviewed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(status, notes, user.id, submissionId);
+  sendJson(res, 200, { ok: true });
 }
 
 function parseMenuLinks(value) {
@@ -3146,16 +2922,6 @@ function canReadPolicy(user, policy) {
   return policy.roles.some((role) => user.roles.includes(role));
 }
 
-function canManageBlog(user) {
-  return Boolean(user?.is_admin || user?.roles?.includes('Blog-Editor'));
-}
-
-function canReadBlogPost(user, post) {
-  if (user?.is_admin) return true;
-  if (!post.roles.length) return true;
-  return post.roles.some((role) => user.roles.includes(role));
-}
-
 function canManageCms(user) {
   return Boolean(user?.is_admin || user?.roles?.includes('CMS-Editor'));
 }
@@ -3168,11 +2934,6 @@ function canReadCmsPage(user, page) {
 
 function requireAdmin(user, res, callback) {
   if (!user?.is_admin) return sendJson(res, 403, { error: 'Admin permissions required.' });
-  return callback();
-}
-
-function requireBlogEditor(user, res, callback) {
-  if (!canManageBlog(user)) return sendJson(res, 403, { error: 'Blog editor permissions required.' });
   return callback();
 }
 
@@ -3497,6 +3258,105 @@ function assetUrl(file) {
   return `/assets/${file}?v=${encodeURIComponent(version)}`;
 }
 
+function pluginAssetUrl(pluginKey, file) {
+  const plugin = loadedPlugins.find((item) => item.key === pluginKey);
+  const assetPath = plugin ? join(plugin.publicDir, file) : '';
+  const version = assetPath && existsSync(assetPath) ? statSync(assetPath).mtimeMs.toString(36) : PACKAGE_JSON.version;
+  return `/assets/plugins/${encodeURIComponent(pluginKey)}/${encodeURIComponent(file)}?v=${encodeURIComponent(version)}`;
+}
+
+function servePluginAsset(res, pathname) {
+  const relative = pathname.slice('/assets/plugins/'.length);
+  const [pluginKey, ...rest] = relative.split('/').map((part) => decodeURIComponent(part));
+  const plugin = loadedPlugins.find((item) => item.key === pluginKey);
+  if (!plugin || !rest.length) return sendText(res, 404, 'Not found');
+  const filePath = normalize(join(plugin.publicDir, rest.join('/')));
+  if (!filePath.startsWith(plugin.publicDir) || !existsSync(filePath) || statSync(filePath).isDirectory()) return sendText(res, 404, 'Not found');
+  res.writeHead(200, { 'content-type': mimeForPath(filePath) });
+  res.end(readFileSync(filePath));
+}
+
+function mimeForPath(filePath) {
+  switch (extname(filePath).toLowerCase()) {
+    case '.js': return 'text/javascript; charset=utf-8';
+    case '.css': return 'text/css; charset=utf-8';
+    case '.svg': return 'image/svg+xml';
+    case '.json': return 'application/json; charset=utf-8';
+    default: return 'application/octet-stream';
+  }
+}
+
+function buildPluginContext(extra = {}) {
+  return {
+    db,
+    ROOT,
+    DATA_DIR,
+    normalize,
+    existsSync,
+    readFileSync,
+    writeFileSync,
+    unlinkSync,
+    mkdirSync,
+    statSync,
+    join,
+    sendJson,
+    sendHtml,
+    sendText,
+    readJson,
+    readBody,
+    redirect,
+    requireAdmin,
+    requirePlugin,
+    listRoles,
+    listUsers,
+    listPlugins,
+    isPluginEnabled,
+    getSettings,
+    resolveLocale,
+    renderShell,
+    renderTopbar,
+    renderAdminTabsNav,
+    renderFooter,
+    renderFeatureHub,
+    renderToc,
+    escapeHtml,
+    escapeAttribute,
+    tf,
+    t,
+    assetUrl,
+    pluginAssetUrl,
+    slugify,
+    titleFromSlug,
+    normalizeRoleList,
+    parseJsonObject,
+    parseFrontmatter,
+    markdownToHtml,
+    formatDisplayDate,
+    getCurrentUser,
+    publicUser,
+    logInfo,
+    logWarn,
+    logError,
+    ensureColumn,
+    ensureTrailingNewline,
+    ...extra
+  };
+}
+
+async function handlePluginRequest({ req, res, url, user, locale, settings }) {
+  for (const plugin of loadedPlugins) {
+    try {
+      const handled = await plugin.handleRequest?.(buildPluginContext({ req, res, url, user, locale, settings, plugin }));
+      if (handled) return true;
+    } catch (error) {
+      logError(`Plugin request failed for ${plugin.key}`, error);
+      sendHtml(res, 500, renderShell({ title: 'Error', body: errorPage('An unexpected error occurred.') }));
+      return true;
+    }
+  }
+  return false;
+}
+
 function inlineScriptTag(file) {
   const assetPath = join(PUBLIC_DIR, file);
   if (!existsSync(assetPath)) return '';
@@ -3523,3 +3383,4 @@ function formatDisplayDate(value, locale = 'en') {
     return date.toISOString().slice(0, 10);
   }
 }
+

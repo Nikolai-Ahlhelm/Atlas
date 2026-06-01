@@ -6,12 +6,12 @@
   let errorBox = null;
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initBlogStudio, { once: true });
+    document.addEventListener('DOMContentLoaded', initBlogAdmin, { once: true });
   } else {
-    initBlogStudio();
+    initBlogAdmin();
   }
 
-  async function initBlogStudio() {
+  async function initBlogAdmin() {
     if (!document.querySelector('#blogPostTree')) return;
     errorBox = document.querySelector('#blogStudioError');
     document.querySelector('[data-new-blog-post]')?.addEventListener('click', openCreateDialog);
@@ -24,7 +24,7 @@
   async function refresh() {
     try {
       clearError();
-      const response = await fetchJson('/api/blog/studio/tree');
+      const response = await fetchJson('/api/admin/blog/tree');
       posts = Array.isArray(response?.tree) ? response.tree : [];
       renderTree();
       if (currentPost?.slug) {
@@ -40,6 +40,7 @@
 
   function renderTree() {
     const target = document.querySelector('#blogPostTree');
+    if (!target) return;
     target.innerHTML = posts.length
       ? `<div class="content-tree-list">${posts.map((post) => `
           <button class="content-tree-item ${currentPost?.slug === post.slug ? 'active' : ''}" type="button" data-open-post="${esc(post.slug)}">
@@ -56,14 +57,19 @@
 
   async function loadPost(slug) {
     try {
-      const post = await fetchJson(`/api/blog/studio/post?slug=${encodeURIComponent(slug)}`);
+      const post = await fetchJson(`/api/admin/blog/post?slug=${encodeURIComponent(slug)}`);
       currentPost = { slug: post.slug };
       syncUrl();
       renderTree();
       document.querySelector('#blogEditorEmpty').hidden = true;
       const form = document.querySelector('#blogEditorForm');
+      const openBlogPostButton = document.querySelector('#openBlogPostButton');
       form.hidden = false;
       document.querySelector('#blogEditorTitle').textContent = `${msg('blogEditor', 'Blog editor')}: ${post.meta?.title || post.slug}`;
+      if (openBlogPostButton) {
+        openBlogPostButton.href = `/blog/${encodeURIComponent(post.slug)}`;
+        openBlogPostButton.hidden = false;
+      }
       form.elements.slug.value = post.slug || '';
       form.elements.display_slug.value = post.slug || '';
       form.elements.relative_path.value = post.relativePath || '';
@@ -84,7 +90,7 @@
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     try {
-      const result = await fetchJson('/api/blog/studio/post', {
+      const result = await fetchJson('/api/admin/blog/post', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -108,13 +114,18 @@
 
   async function deletePost() {
     const slug = document.querySelector('#blogEditorForm')?.elements.slug.value;
+    const openBlogPostButton = document.querySelector('#openBlogPostButton');
     if (!slug || !confirm(msg('deletePostConfirm', 'Delete this post?'))) return;
     try {
-      await fetchJson(`/api/blog/studio/post/${encodeURIComponent(slug)}`, { method: 'DELETE' });
+      await fetchJson(`/api/admin/blog/post/${encodeURIComponent(slug)}`, { method: 'DELETE' });
       currentPost = null;
       syncUrl();
       document.querySelector('#blogEditorForm').hidden = true;
       document.querySelector('#blogEditorEmpty').hidden = false;
+      if (openBlogPostButton) {
+        openBlogPostButton.hidden = true;
+        openBlogPostButton.href = '/blog';
+      }
       await refresh();
     } catch (error) {
       renderError(error);
@@ -147,7 +158,7 @@
       event.preventDefault();
       const form = new FormData(event.currentTarget);
       try {
-        const result = await fetchJson('/api/blog/studio/post', {
+        const result = await fetchJson('/api/admin/blog/post', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
