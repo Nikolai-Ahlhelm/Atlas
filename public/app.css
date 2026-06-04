@@ -1207,6 +1207,18 @@ dd {
   display: none;
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .pill,
 .tag {
   display: inline-flex;
@@ -1218,6 +1230,29 @@ dd {
   color: var(--role-color, var(--primary-dark));
   font-size: 12px;
   font-weight: 750;
+}
+
+.tag-pill {
+  gap: 6px;
+  border: 1px solid color-mix(in srgb, var(--tag-color, var(--primary)) 28%, transparent);
+  background: color-mix(in srgb, var(--tag-color, var(--primary)) 17%, var(--surface));
+  color: color-mix(in srgb, var(--tag-color, var(--primary-dark)) 78%, var(--text));
+}
+
+:root[data-theme="dark"] .tag-pill,
+body[data-default-theme="dark"] .tag-pill {
+  border-color: color-mix(in srgb, var(--tag-color, var(--primary-dark-mode)) 42%, transparent);
+  background: color-mix(in srgb, var(--tag-color, var(--primary-dark-mode)) 24%, var(--surface-dark-strong));
+  color: color-mix(in srgb, var(--tag-color, #93c5fd) 34%, #f8fbff);
+}
+
+.tag-color-swatch {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  border-radius: 999px;
+  background: var(--tag-color, var(--primary));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--tag-color, var(--primary)) 18%, transparent);
 }
 
 .user-menu-trigger {
@@ -2341,7 +2376,10 @@ fieldset {
 }
 
 .changelog-shell .content {
-  width: min(1440px, calc(100% - 48px));
+  width: 100%;
+  max-width: none;
+  padding-right: 18px;
+  padding-left: 18px;
 }
 
 .changelog-page-shell {
@@ -2536,10 +2574,12 @@ body[data-default-theme="dark"] .changelog-table thead th {
   background: color-mix(in srgb, var(--surface-light-soft) 24%, transparent);
 }
 
-body[data-default-theme="dark"] .spreadsheet-table tbody tr:nth-child(odd) {
+body[data-default-theme="dark"] .spreadsheet-table tbody tr:nth-child(odd),
+:root[data-theme="dark"] .spreadsheet-table tbody tr:nth-child(odd) {
   background: transparent;
 }
 
+:root[data-theme="dark"] .spreadsheet-table tbody tr:nth-child(even),
 body[data-default-theme="dark"] .spreadsheet-table tbody tr:nth-child(even) {
   background: color-mix(in srgb, var(--surface-dark-soft) 30%, transparent);
 }
@@ -2548,7 +2588,8 @@ body[data-default-theme="dark"] .spreadsheet-table tbody tr:nth-child(even) {
   background: color-mix(in srgb, var(--primary-light) 8%, var(--surface-light-strong)) !important;
 }
 
-body[data-default-theme="dark"] .spreadsheet-table tbody tr.is-active {
+body[data-default-theme="dark"] .spreadsheet-table tbody tr.is-active,
+:root[data-theme="dark"] .spreadsheet-table tbody tr.is-active {
   background: color-mix(in srgb, var(--primary-dark-mode) 10%, var(--surface-dark-strong)) !important;
 }
 
@@ -2556,6 +2597,7 @@ body[data-default-theme="dark"] .spreadsheet-table tbody tr.is-active {
   background: color-mix(in srgb, var(--primary-light) 5%, var(--surface-light-strong));
 }
 
+:root[data-theme="dark"] .spreadsheet-table tbody tr:hover,
 body[data-default-theme="dark"] .spreadsheet-table tbody tr:hover {
   background: color-mix(in srgb, var(--primary-dark-mode) 7%, var(--surface-dark-strong));
 }
@@ -2566,6 +2608,104 @@ body[data-default-theme="dark"] .spreadsheet-table tbody tr:hover {
   border-bottom: 1px solid color-mix(in srgb, var(--primary-light) 10%, transparent);
   line-height: 1.45;
   color: inherit;
+}
+
+.spreadsheet-table tr.is-editing td {
+  background: color-mix(in srgb, var(--primary-light) 7%, var(--surface-strong));
+}
+
+body[data-default-theme="dark"] .spreadsheet-table tr.is-editing td,
+:root[data-theme="dark"] .spreadsheet-table tr.is-editing td {
+  background: color-mix(in srgb, var(--primary-dark-mode) 10%, var(--surface-dark-strong));
+}
+
+.inline-display-cell {
+  cursor: cell;
+  transition: background 160ms ease, box-shadow 160ms ease;
+}
+
+.inline-display-cell:hover {
+  background: color-mix(in srgb, var(--primary-light) 8%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary-light) 18%, transparent);
+}
+
+:root[data-theme="dark"] .inline-display-cell:hover,
+body[data-default-theme="dark"] .inline-display-cell:hover {
+  background: color-mix(in srgb, var(--primary-dark-mode) 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary-dark-mode) 28%, transparent);
+}
+
+.inline-edit-cell {
+  min-width: 180px;
+  padding: 5px 8px !important;
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--primary-light) 28%, transparent);
+}
+
+.inline-edit-cell label,
+.inline-edit-cell .entry-picker-field {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  min-width: 160px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--muted);
+}
+
+.inline-edit-cell input:not([type="checkbox"]),
+.inline-edit-cell textarea,
+.inline-edit-cell select,
+.inline-edit-cell .entry-picker-trigger {
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 9px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--surface-elevated) 92%, transparent);
+}
+
+:root[data-theme="dark"] .inline-edit-cell input:not([type="checkbox"]),
+:root[data-theme="dark"] .inline-edit-cell textarea,
+:root[data-theme="dark"] .inline-edit-cell select,
+:root[data-theme="dark"] .inline-edit-cell .entry-picker-trigger,
+body[data-default-theme="dark"] .inline-edit-cell input:not([type="checkbox"]),
+body[data-default-theme="dark"] .inline-edit-cell textarea,
+body[data-default-theme="dark"] .inline-edit-cell select,
+body[data-default-theme="dark"] .inline-edit-cell .entry-picker-trigger {
+  background: color-mix(in srgb, var(--surface-dark-strong) 92%, #0b1220);
+  border-color: color-mix(in srgb, var(--primary-dark-mode) 24%, var(--line));
+  color: var(--text);
+}
+
+.inline-edit-cell textarea {
+  min-height: 72px;
+}
+
+.inline-edit-cell .check {
+  min-height: 34px;
+  align-items: center;
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.inline-row-actions {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  min-width: 150px;
+  background: color-mix(in srgb, var(--surface-strong) 96%, transparent);
+  box-shadow: -8px 0 18px color-mix(in srgb, var(--surface-light-base) 24%, transparent);
+}
+
+body[data-default-theme="dark"] .inline-row-actions,
+:root[data-theme="dark"] .inline-row-actions {
+  background: color-mix(in srgb, var(--surface-dark-strong) 96%, transparent);
+  box-shadow: -8px 0 18px color-mix(in srgb, var(--surface-dark-base) 30%, transparent);
+}
+
+.is-draft .row-index-cell {
+  color: var(--primary-dark);
+  font-weight: 900;
+  opacity: 1;
 }
 
 .sheet-head-cell {
@@ -2685,6 +2825,80 @@ body[data-default-theme="dark"] .spreadsheet-table tbody tr:hover {
   padding: 4px 2px;
 }
 
+.entry-picker-option-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.entry-picker-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 34px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.entry-picker-option:hover {
+  background: color-mix(in srgb, var(--primary-light) 7%, var(--surface-strong));
+}
+
+.entry-picker-option.is-selected {
+  background: color-mix(in srgb, var(--primary-light) 13%, var(--surface-strong));
+  color: var(--primary-dark);
+  font-weight: 800;
+}
+
+:root[data-theme="dark"] .entry-picker-option:hover,
+body[data-default-theme="dark"] .entry-picker-option:hover {
+  background: color-mix(in srgb, var(--primary-dark-mode) 14%, var(--surface-dark-strong));
+}
+
+:root[data-theme="dark"] .entry-picker-option.is-selected,
+body[data-default-theme="dark"] .entry-picker-option.is-selected {
+  background: color-mix(in srgb, var(--primary-dark-mode) 22%, var(--surface-dark-strong));
+  color: #f8fbff;
+}
+
+.entry-picker-checkmark {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid color-mix(in srgb, var(--primary-light) 18%, var(--line));
+  border-radius: 5px;
+  color: var(--primary-dark);
+  font-size: 0.72rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.entry-picker-add-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.entry-picker-add-row input {
+  min-height: 34px;
+  width: 100%;
+}
+
+.entry-picker-color-control {
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
+}
+
 .sheet-menu-actions {
   display: flex;
   justify-content: flex-end;
@@ -2774,52 +2988,187 @@ body[data-default-theme="dark"] .spreadsheet-table tbody tr:hover {
 
 .analytics-grid {
   display: grid;
-  gap: 16px;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 18px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
 }
 
 .metric-card,
 .analytics-panel {
-  padding: 16px;
-  border-radius: 16px;
-  background: var(--surface-light);
-  border: 1px solid color-mix(in srgb, var(--primary-light) 10%, transparent);
+  padding: 18px;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--surface-elevated) 94%, white);
+  border: 1px solid color-mix(in srgb, var(--primary-light) 12%, transparent);
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: blur(20px) saturate(140%);
 }
 
 body[data-default-theme="dark"] .metric-card,
+:root[data-theme="dark"] .metric-card,
+:root[data-theme="dark"] .analytics-panel,
 body[data-default-theme="dark"] .analytics-panel {
-  background: var(--surface-dark);
+  background: color-mix(in srgb, var(--surface-dark-strong) 92%, #09101c);
+  border-color: color-mix(in srgb, var(--primary-dark-mode) 24%, transparent);
+  box-shadow: 0 16px 40px color-mix(in srgb, var(--surface-dark-base) 35%, transparent);
 }
 
 .metric-card {
+  position: relative;
   min-width: 180px;
+  display: grid;
+  gap: 8px;
+  overflow: hidden;
 }
 
-.metric-card span {
+.metric-card::after {
+  content: "";
+  position: absolute;
+  inset: auto -24px -42px auto;
+  width: 120px;
+  height: 120px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary-light) 18%, transparent);
+  filter: blur(2px);
+  pointer-events: none;
+}
+
+:root[data-theme="dark"] .metric-card::after,
+body[data-default-theme="dark"] .metric-card::after {
+  background: color-mix(in srgb, var(--primary-dark-mode) 24%, transparent);
+}
+
+.analytics-shell {
+  display: grid;
+  gap: 18px;
+}
+
+.analytics-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+}
+
+.metric-label {
   display: block;
   font-size: 0.92rem;
-  opacity: 0.75;
+  font-weight: 700;
+  color: var(--muted);
 }
 
-.metric-card strong {
+.metric-value {
   display: block;
-  margin-top: 8px;
-  font-size: 1.5rem;
+  font-size: clamp(1.45rem, 1.2rem + 1vw, 2.1rem);
+  line-height: 1.05;
+  color: var(--text);
+}
+
+.metric-meta {
+  display: block;
+  font-size: 0.82rem;
+  color: var(--muted);
 }
 
 .analytics-list {
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
 .analytics-item {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--primary-light) 8%, transparent);
+  background: color-mix(in srgb, var(--surface-soft) 72%, white);
+}
+
+:root[data-theme="dark"] .analytics-item,
+body[data-default-theme="dark"] .analytics-item {
+  border-color: color-mix(in srgb, var(--primary-dark-mode) 20%, transparent);
+  background: color-mix(in srgb, var(--surface-dark-soft) 68%, transparent);
+}
+
+.analytics-item-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+}
+
+.analytics-item-copy {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.analytics-item-label {
+  font-weight: 700;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.analytics-item-value {
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--primary-dark);
+}
+
+:root[data-theme="dark"] .analytics-item-value,
+body[data-default-theme="dark"] .analytics-item-value {
+  color: #dbeafe;
+}
+
+.analytics-item-bar {
+  display: block;
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-light-soft) 88%, white);
+  overflow: hidden;
+}
+
+.analytics-item-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--primary) 88%, white), color-mix(in srgb, var(--primary-light) 72%, white));
+}
+
+:root[data-theme="dark"] .analytics-item-bar,
+body[data-default-theme="dark"] .analytics-item-bar {
+  background: color-mix(in srgb, var(--surface-dark-base) 72%, #0b1220);
+}
+
+:root[data-theme="dark"] .analytics-item-bar span,
+body[data-default-theme="dark"] .analytics-item-bar span {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--primary-dark-mode) 78%, white), #93c5fd);
+}
+
+.analytics-panel-head {
+  margin-bottom: 14px;
+}
+
+.analytics-panel-head h2 {
+  margin-bottom: 4px;
+}
+
+.analytics-empty {
+  padding: 20px 0 8px;
+}
+
+.changelog-public-analytics,
+#changelogAnalyticsPanel {
+  display: grid;
+  gap: 18px;
+  border-top: 1px solid var(--line);
+  padding-top: 18px;
 }
 
 .changelog-admin-grid {
   align-items: start;
+  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+}
+
+.changelog-admin-page {
+  width: 100%;
+  max-width: none;
 }
 
 .changelog-admin-detail-panel .content-editor-body {
@@ -2894,11 +3243,61 @@ body[data-default-theme="dark"] .changelog-editor-panel {
 }
 
 .changelog-tag-manager-add .row-actions {
+  align-items: center;
   flex-wrap: wrap;
 }
 
 .changelog-tag-manager-add input {
   flex: 1 1 220px;
+}
+
+.tag-suggestion-list {
+  display: grid;
+  gap: 8px;
+}
+
+.tag-suggestion-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--primary-light) 10%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-soft) 74%, transparent);
+}
+
+:root[data-theme="dark"] .tag-suggestion-row,
+body[data-default-theme="dark"] .tag-suggestion-row {
+  border-color: color-mix(in srgb, var(--primary-dark-mode) 20%, transparent);
+  background: color-mix(in srgb, var(--surface-dark-strong) 82%, transparent);
+}
+
+.tag-color-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.tag-color-control.visible {
+  flex: 0 0 auto;
+}
+
+.tag-color-input {
+  width: 42px;
+  height: 34px;
+  min-height: 34px;
+  padding: 3px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.tag-color-input.compact {
+  width: 34px;
 }
 
 .pill.removable {
@@ -2946,8 +3345,49 @@ body[data-default-theme="dark"] .changelog-editor-panel {
   text-align: left;
 }
 
+.entry-picker-menu {
+  display: grid;
+  gap: 10px;
+  width: min(360px, 70vw);
+  max-height: min(70vh, 520px);
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--primary-light) 18%, var(--line));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-elevated) 96%, transparent);
+  box-shadow: var(--shadow-soft);
+  color: inherit;
+  overflow: auto;
+  z-index: 45;
+}
+
+:root[data-theme="dark"] .entry-picker-menu,
+body[data-default-theme="dark"] .entry-picker-menu {
+  background: color-mix(in srgb, var(--surface-dark-strong) 96%, #0b1220);
+  border-color: color-mix(in srgb, var(--primary-dark-mode) 24%, var(--line));
+}
+
 .entry-picker-trigger:hover {
   background: color-mix(in srgb, var(--surface-strong) 84%, transparent);
+}
+
+.inline-edit-cell .entry-picker-trigger {
+  border-color: color-mix(in srgb, var(--primary-light) 24%, var(--line));
+  background: color-mix(in srgb, var(--surface-elevated) 92%, transparent);
+  color: var(--text);
+  font-weight: 800;
+  opacity: 1;
+}
+
+:root[data-theme="dark"] .inline-edit-cell .entry-picker-trigger,
+body[data-default-theme="dark"] .inline-edit-cell .entry-picker-trigger {
+  border-color: color-mix(in srgb, var(--primary-dark-mode) 38%, var(--line));
+  background: color-mix(in srgb, var(--primary-dark-mode) 14%, var(--surface-dark-strong));
+  color: #f8fbff;
+}
+
+:root[data-theme="dark"] .inline-edit-cell .entry-picker-trigger:hover,
+body[data-default-theme="dark"] .inline-edit-cell .entry-picker-trigger:hover {
+  background: color-mix(in srgb, var(--primary-dark-mode) 22%, var(--surface-dark-strong));
 }
 
 .entry-picker-trigger .sheet-filter-glyph {
@@ -2967,7 +3407,9 @@ body[data-default-theme="dark"] .changelog-editor-panel {
 
 @media (max-width: 900px) {
   .changelog-shell .content {
-    width: min(100%, calc(100% - 24px));
+    width: 100%;
+    padding-right: 12px;
+    padding-left: 12px;
   }
 
   .changelog-table {

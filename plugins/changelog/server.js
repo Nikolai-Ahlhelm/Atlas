@@ -22,7 +22,7 @@ export default function createChangelogPlugin({ manifest, rootDir }) {
   let db = null;
   let helpers = null;
 
-  const feature = {
+    const feature = {
     key: manifest.key || 'changelog',
     label: manifest.name || 'Changelog',
     href: '/changelogs',
@@ -497,8 +497,8 @@ export default function createChangelogPlugin({ manifest, rootDir }) {
   function handleGetAdminList(context) {
     const slug = String(context.url.searchParams.get('slug') || '').trim();
     const list = getListBySlug(slug);
-    if (!list) return context.sendJson(context.res, 404, { error: 'Changelog list not found.' });
-    if (!canManageList(context.user, list)) return context.sendJson(context.res, 403, { error: 'You do not have access to this list.' });
+    if (!list) return context.sendJson(context.res, 404, { error: context.tf(context.locale, 'changelogListNotFound', 'Changelog list not found.') });
+    if (!canManageList(context.user, list)) return context.sendJson(context.res, 403, { error: context.tf(context.locale, 'changelogListAccessDenied', 'You do not have access to this list.') });
     context.sendJson(context.res, 200, serializeListDetail(context, list, { includePermissions: true }));
   }
 
@@ -510,18 +510,18 @@ export default function createChangelogPlugin({ manifest, rootDir }) {
     const description = String(payload.description || '').trim();
     const introText = String(payload.intro_text || payload.introText || '').trim();
     const status = normalizeListStatus(payload.status);
-    const tagSuggestions = normalizeStringArray(payload.tag_suggestions ?? payload.tagSuggestions);
+    const tagSuggestions = normalizeTagSuggestionItems(payload.tag_suggestions ?? payload.tagSuggestions);
     const id = Number(payload.id || 0);
 
-    if (!slug) return context.sendJson(context.res, 400, { error: 'A list slug is required.' });
-    if (!title) return context.sendJson(context.res, 400, { error: 'A list title is required.' });
+    if (!slug) return context.sendJson(context.res, 400, { error: context.tf(context.locale, 'listSlugRequired', 'A list slug is required.') });
+    if (!title) return context.sendJson(context.res, 400, { error: context.tf(context.locale, 'listTitleRequired', 'A list title is required.') });
 
     if (id) {
       const existing = getListById(id);
-      if (!existing) return context.sendJson(context.res, 404, { error: 'Changelog list not found.' });
-      if (!canManageList(context.user, existing)) return context.sendJson(context.res, 403, { error: 'You do not have access to this list.' });
+      if (!existing) return context.sendJson(context.res, 404, { error: context.tf(context.locale, 'changelogListNotFound', 'Changelog list not found.') });
+      if (!canManageList(context.user, existing)) return context.sendJson(context.res, 403, { error: context.tf(context.locale, 'changelogListAccessDenied', 'You do not have access to this list.') });
       const duplicate = db.prepare('SELECT id FROM changelog_lists WHERE slug = ? AND id != ?').get(slug, id);
-      if (duplicate) return context.sendJson(context.res, 409, { error: 'This list slug is already in use.' });
+      if (duplicate) return context.sendJson(context.res, 409, { error: context.tf(context.locale, 'listSlugInUse', 'This list slug is already in use.') });
       db.prepare(`
         UPDATE changelog_lists
         SET slug = ?, title = ?, description = ?, intro_text = ?, status = ?, tag_suggestions_json = ?, updated_by_user_id = ?, updated_at = ?
@@ -531,7 +531,7 @@ export default function createChangelogPlugin({ manifest, rootDir }) {
     }
 
     const duplicate = db.prepare('SELECT id FROM changelog_lists WHERE slug = ?').get(slug);
-    if (duplicate) return context.sendJson(context.res, 409, { error: 'This list slug is already in use.' });
+    if (duplicate) return context.sendJson(context.res, 409, { error: context.tf(context.locale, 'listSlugInUse', 'This list slug is already in use.') });
     const result = db.prepare(`
       INSERT INTO changelog_lists (
         slug, title, description, intro_text, status, tag_suggestions_json,
@@ -550,15 +550,15 @@ export default function createChangelogPlugin({ manifest, rootDir }) {
       now,
       now
     );
-    createDefaultColumns(result.lastInsertRowid);
+    createDefaultColumns(result.lastInsertRowid, context);
     context.sendJson(context.res, 200, { ok: true, slug });
   }
 
   async function handleSaveColumns(context) {
     const payload = await context.readJson(context.req);
     const list = getListBySlug(String(payload.slug || '').trim());
-    if (!list) return context.sendJson(context.res, 404, { error: 'Changelog list not found.' });
-    if (!canManageList(context.user, list)) return context.sendJson(context.res, 403, { error: 'You do not have access to this list.' });
+    if (!list) return context.sendJson(context.res, 404, { error: context.tf(context.locale, 'changelogListNotFound', 'Changelog list not found.') });
+    if (!canManageList(context.user, list)) return context.sendJson(context.res, 403, { error: context.tf(context.locale, 'changelogListAccessDenied', 'You do not have access to this list.') });
     const columns = Array.isArray(payload.columns) ? payload.columns : [];
     const nextColumns = [];
     const seenKeys = new Set();
@@ -568,16 +568,16 @@ export default function createChangelogPlugin({ manifest, rootDir }) {
     const now = new Date().toISOString();
 
     for (let index = 0; index < columns.length; index += 1) {
-      const normalized = normalizeColumnPayload(columns[index], index);
+      const normalized = normalizeColumnPayload(columns[index], index, context);
       if (CHANGELOG_RESERVED_COLUMN_KEYS.has(normalized.key)) {
-        return context.sendJson(context.res, 400, { error: `Column key is reserved: ${normalized.key}` });
+        return context.sendJson(context.res, 400, { error: `${context.tf(context.locale, 'columnKeyReserved', 'Column key is reserved')}: ${normalized.key}` });
       }
-      if (seenKeys.has(normalized.key)) return context.sendJson(context.res, 400, { error: `Duplicate column key: ${normalized.key}` });
+      if (seenKeys.has(normalized.key)) return context.sendJson(context.res, 400, { error: `${context.tf(context.locale, 'duplicateColumnKey', 'Duplicate column key')}: ${normalized.key}` });
       seenKeys.add(normalized.key);
       nextColumns.push(normalized);
     }
 
-    if (!nextColumns.length) return context.sendJson(context.res, 400, { error: 'At least one column is required.' });
+    if (!nextColumns.length) return context.sendJson(context.res, 400, { error: context.tf(context.locale, 'atLeastOneColumnRequired', 'At least one column is required.') });
 
     for (const column of nextColumns) {
       if (column.id && existingIds.has(column.id)) {
@@ -640,8 +640,8 @@ export default function createChangelogPlugin({ manifest, rootDir }) {
   async function handleSavePermissions(context) {
     const payload = await context.readJson(context.req);
     const list = getListBySlug(String(payload.slug || '').trim());
-    if (!list) return context.sendJson(context.res, 404, { error: 'Changelog list not found.' });
-    if (!canManageList(context.user, list)) return context.sendJson(context.res, 403, { error: 'You do not have access to this list.' });
+    if (!list) return context.sendJson(context.res, 404, { error: context.tf(context.locale, 'changelogListNotFound', 'Changelog list not found.') });
+    if (!canManageList(context.user, list)) return context.sendJson(context.res, 403, { error: context.tf(context.locale, 'changelogListAccessDenied', 'You do not have access to this list.') });
     const permissions = payload.permissions && typeof payload.permissions === 'object' ? payload.permissions : {};
     const validRoles = new Set(context.listRoles().map((role) => role.name));
     db.prepare('DELETE FROM changelog_list_roles WHERE list_id = ?').run(list.id);
@@ -658,7 +658,7 @@ export default function createChangelogPlugin({ manifest, rootDir }) {
   function handleGetPublicList(context) {
     const slug = String(context.url.searchParams.get('slug') || '').trim();
     const list = getListBySlug(slug);
-    if (!list) return context.sendJson(context.res, 404, { error: 'Changelog list not found.' });
+    if (!list) return context.sendJson(context.res, 404, { error: context.tf(context.locale, 'changelogListNotFound', 'Changelog list not found.') });
     if (!canViewList(context.user, list)) return context.sendJson(context.res, 403, { error: context.tf(context.locale, 'changelogNoAccess', 'You do not have access to this changelog.') });
     context.sendJson(context.res, 200, serializeListDetail(context, list, { includePermissions: canManageList(context.user, list) }));
   }
@@ -666,7 +666,7 @@ export default function createChangelogPlugin({ manifest, rootDir }) {
   function handleGetEntries(context) {
     const slug = String(context.url.searchParams.get('slug') || '').trim();
     const list = getListBySlug(slug);
-    if (!list) return context.sendJson(context.res, 404, { error: 'Changelog list not found.' });
+    if (!list) return context.sendJson(context.res, 404, { error: context.tf(context.locale, 'changelogListNotFound', 'Changelog list not found.') });
     if (!canViewList(context.user, list)) return context.sendJson(context.res, 403, { error: context.tf(context.locale, 'changelogNoAccess', 'You do not have access to this changelog.') });
     const columns = listColumns(list.id);
     const queryOptions = parseEntryQuery(context.url.searchParams, columns);
@@ -677,8 +677,8 @@ export default function createChangelogPlugin({ manifest, rootDir }) {
   async function handleSaveEntry(context) {
     const payload = await context.readJson(context.req);
     const list = getListBySlug(String(payload.slug || '').trim());
-    if (!list) return context.sendJson(context.res, 404, { error: 'Changelog list not found.' });
-    if (!canEditList(context.user, list)) return context.sendJson(context.res, 403, { error: 'You do not have permission to create entries for this list.' });
+    if (!list) return context.sendJson(context.res, 404, { error: context.tf(context.locale, 'changelogListNotFound', 'Changelog list not found.') });
+    if (!canEditList(context.user, list)) return context.sendJson(context.res, 403, { error: context.tf(context.locale, 'createEntryDenied', 'You do not have permission to create entries for this list.') });
     const columns = listColumns(list.id);
     const values = payload.values && typeof payload.values === 'object' ? payload.values : {};
     const normalizedByColumnId = new Map();
@@ -696,8 +696,8 @@ export default function createChangelogPlugin({ manifest, rootDir }) {
     const entryId = Number(payload.id || 0);
     if (entryId) {
       const entry = getEntryById(entryId);
-      if (!entry || entry.list_id !== list.id) return context.sendJson(context.res, 404, { error: 'Entry not found.' });
-      if (!canEditEntry(context.user, list, entry)) return context.sendJson(context.res, 403, { error: 'You may only edit your own entries unless you are a changelog admin.' });
+      if (!entry || entry.list_id !== list.id) return context.sendJson(context.res, 404, { error: context.tf(context.locale, 'entryNotFound', 'Entry not found.') });
+      if (!canEditEntry(context.user, list, entry)) return context.sendJson(context.res, 403, { error: context.tf(context.locale, 'editOwnEntriesOnly', 'You may only edit your own entries unless you are a changelog admin.') });
       db.prepare(`
         UPDATE changelog_entries
         SET updated_by_user_id = ?, updated_by_name = ?, updated_at = ?
@@ -706,6 +706,7 @@ export default function createChangelogPlugin({ manifest, rootDir }) {
       for (const column of columns) {
         persistEntryValue(entryId, column, normalizedByColumnId.get(column.id));
       }
+      persistEntryTagSuggestionsFromPayload(context, list, payload, now);
       return context.sendJson(context.res, 200, { ok: true, id: entryId });
     }
 
@@ -725,14 +726,26 @@ export default function createChangelogPlugin({ manifest, rootDir }) {
     for (const column of columns) {
       persistEntryValue(result.lastInsertRowid, column, normalizedByColumnId.get(column.id));
     }
+    persistEntryTagSuggestionsFromPayload(context, list, payload, now);
     context.sendJson(context.res, 200, { ok: true, id: result.lastInsertRowid });
+  }
+
+  function persistEntryTagSuggestionsFromPayload(context, list, payload, now) {
+    if (!Object.prototype.hasOwnProperty.call(payload, 'tag_suggestions') && !Object.prototype.hasOwnProperty.call(payload, 'tagSuggestions')) return;
+    if (!canManageList(context.user, list)) return;
+    const tagSuggestions = normalizeTagSuggestionItems(payload.tag_suggestions ?? payload.tagSuggestions);
+    db.prepare(`
+      UPDATE changelog_lists
+      SET tag_suggestions_json = ?, updated_by_user_id = ?, updated_at = ?
+      WHERE id = ?
+    `).run(JSON.stringify(tagSuggestions), context.user.id, now, list.id);
   }
 
   function handleGetAnalytics(context) {
     const slug = String(context.url.searchParams.get('slug') || '').trim();
     const list = getListBySlug(slug);
-    if (!list) return context.sendJson(context.res, 404, { error: 'Changelog list not found.' });
-    if (!canViewList(context.user, list)) return context.sendJson(context.res, 403, { error: 'You do not have access to this changelog.' });
+    if (!list) return context.sendJson(context.res, 404, { error: context.tf(context.locale, 'changelogListNotFound', 'Changelog list not found.') });
+    if (!canViewList(context.user, list)) return context.sendJson(context.res, 403, { error: context.tf(context.locale, 'changelogNoAccess', 'You do not have access to this changelog.') });
     const columns = listColumns(list.id);
     const queryOptions = parseEntryQuery(context.url.searchParams, columns);
     const analytics = buildAnalytics(list, columns, queryOptions);
@@ -742,8 +755,8 @@ export default function createChangelogPlugin({ manifest, rootDir }) {
   function handleExportCsv(context) {
     const slug = String(context.url.searchParams.get('slug') || '').trim();
     const list = getListBySlug(slug);
-    if (!list) return context.sendJson(context.res, 404, { error: 'Changelog list not found.' });
-    if (!canViewList(context.user, list)) return context.sendJson(context.res, 403, { error: 'You do not have access to this changelog.' });
+    if (!list) return context.sendJson(context.res, 404, { error: context.tf(context.locale, 'changelogListNotFound', 'Changelog list not found.') });
+    if (!canViewList(context.user, list)) return context.sendJson(context.res, 403, { error: context.tf(context.locale, 'changelogNoAccess', 'You do not have access to this changelog.') });
     const columns = listColumns(list.id);
     const queryOptions = parseEntryQuery(context.url.searchParams, columns);
     const rows = queryAllEntryRows(list, columns, queryOptions);
@@ -893,13 +906,13 @@ export default function createChangelogPlugin({ manifest, rootDir }) {
     return String(value || '').trim().toLowerCase() === 'archived' ? 'archived' : 'active';
   }
 
-  function normalizeColumnPayload(payload, index = 0) {
+  function normalizeColumnPayload(payload, index = 0, context = null) {
     const type = String(payload?.type || 'text').trim().toLowerCase();
-    if (!CHANGELOG_COLUMN_TYPES.has(type)) throw new Error(`Unsupported column type: ${type}`);
+    if (!CHANGELOG_COLUMN_TYPES.has(type)) throw new Error(`${context?.tf?.(context.locale, 'unsupportedColumnType', 'Unsupported column type') || 'Unsupported column type'}: ${type}`);
     const key = helpers.slugify(String(payload?.key || payload?.label || `column-${index + 1}`).trim()).replace(/-/g, '_');
-    if (!key) throw new Error('A column key is required.');
+    if (!key) throw new Error(context?.tf?.(context.locale, 'columnKeyRequired', 'A column key is required.') || 'A column key is required.');
     const label = String(payload?.label || key).trim();
-    if (!label) throw new Error('A column label is required.');
+    if (!label) throw new Error(context?.tf?.(context.locale, 'columnLabelRequired', 'A column label is required.') || 'A column label is required.');
     return {
       id: Number(payload?.id || 0) || null,
       key,
@@ -934,12 +947,13 @@ export default function createChangelogPlugin({ manifest, rootDir }) {
     return '';
   }
 
-  function createDefaultColumns(listId) {
+  function createDefaultColumns(listId, context = null) {
+    const tr = (key, fallback) => context?.tf?.(context.locale, key, fallback) || fallback;
     const defaults = [
-      { key: 'summary', label: 'Summary', type: 'text', required: true, defaultValue: null, options: [], width: '24rem', visible: true, sortable: true, filterable: true, position: 0 },
-      { key: 'status', label: 'Status', type: 'status', required: false, defaultValue: 'open', options: ['open', 'in_progress', 'done'], width: '10rem', visible: true, sortable: true, filterable: true, position: 1 },
-      { key: 'change_date', label: 'Date', type: 'date', required: false, defaultValue: null, options: [], width: '10rem', visible: true, sortable: true, filterable: true, position: 2 },
-      { key: 'tags', label: 'Tags', type: 'tags', required: false, defaultValue: [], options: [], width: '14rem', visible: true, sortable: false, filterable: true, position: 3 }
+      { key: 'summary', label: tr('summary', 'Summary'), type: 'text', required: true, defaultValue: null, options: [], width: '24rem', visible: true, sortable: true, filterable: true, position: 0 },
+      { key: 'status', label: tr('status', 'Status'), type: 'status', required: false, defaultValue: 'open', options: ['open', 'in_progress', 'done'], width: '10rem', visible: true, sortable: true, filterable: true, position: 1 },
+      { key: 'change_date', label: tr('date', 'Date'), type: 'date', required: false, defaultValue: null, options: [], width: '10rem', visible: true, sortable: true, filterable: true, position: 2 },
+      { key: 'tags', label: tr('tags', 'Tags'), type: 'tags', required: false, defaultValue: [], options: [], width: '14rem', visible: true, sortable: false, filterable: true, position: 3 }
     ];
     const now = new Date().toISOString();
     for (const column of defaults) {
@@ -1200,6 +1214,7 @@ export default function createChangelogPlugin({ manifest, rootDir }) {
     const columns = listColumns(list.id);
     const permissions = getListPermissions(list.id);
     const dynamicOptions = getDynamicColumnOptions(list.id, columns);
+    const tagSuggestions = normalizeTagSuggestionItems(parseStoredJson(list.tag_suggestions_json, []));
     const creators = db.prepare(`
       SELECT DISTINCT created_by_name
       FROM changelog_entries
@@ -1213,7 +1228,12 @@ export default function createChangelogPlugin({ manifest, rootDir }) {
       description: list.description || '',
       introText: list.intro_text || '',
       status: list.status || 'active',
-      tagSuggestions: normalizeStringArray(parseStoredJson(list.tag_suggestions_json, [])),
+      tagSuggestions: tagSuggestions.map((item) => item.label),
+      tagColors: Object.fromEntries(
+        tagSuggestions
+          .filter((item) => item.color)
+          .map((item) => [item.label, item.color])
+      ),
       columns,
       liveHref: `/changelogs/${encodeURIComponent(list.slug)}`,
       adminHref: `/admin/changelogs/${encodeURIComponent(list.slug)}`,
@@ -1316,6 +1336,31 @@ export default function createChangelogPlugin({ manifest, rootDir }) {
     if (Array.isArray(value)) return Array.from(new Set(value.map((item) => String(item || '').trim()).filter(Boolean)));
     if (typeof value === 'string') return Array.from(new Set(value.split(',').map((item) => item.trim()).filter(Boolean)));
     return [];
+  }
+
+  function normalizeTagSuggestionItems(value) {
+    const source = Array.isArray(value)
+      ? value
+      : typeof value === 'string'
+        ? value.split(',')
+        : [];
+    const seen = new Set();
+    const items = [];
+    for (const item of source) {
+      const label = typeof item === 'object' && item
+        ? String(item.label ?? item.name ?? item.value ?? '').trim()
+        : String(item || '').trim();
+      if (!label || seen.has(label)) continue;
+      seen.add(label);
+      const color = typeof item === 'object' && item ? normalizeTagColor(item.color) : '';
+      items.push({ label, color });
+    }
+    return items;
+  }
+
+  function normalizeTagColor(value) {
+    const text = String(value || '').trim();
+    return /^#[0-9a-f]{6}$/i.test(text) ? text.toLowerCase() : '';
   }
 
   function normalizeDateString(value) {
