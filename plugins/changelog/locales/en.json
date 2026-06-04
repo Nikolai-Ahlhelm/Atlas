@@ -1,0 +1,14 @@
+{
+  "code": "en",
+  "feature": {
+    "label": "Changelog",
+    "description": "Configurable changelog lists with permissions, filters, analytics and export."
+  },
+  "ui": {
+    "changelog": "Changelog",
+    "changelogFeatureDisabled": "This feature is currently disabled.",
+    "changelogFeatureDisabledNotice": "The changelog feature is currently disabled.",
+    "changelogAdminRequired": "Changelog admin access is required.",
+    "changelogNoAccess": "You do not have access to this changelog."
+  }
+}
