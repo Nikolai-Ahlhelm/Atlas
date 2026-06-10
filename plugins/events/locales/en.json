@@ -1,0 +1,36 @@
+{
+  "feature": {
+    "label": "Events",
+    "description": "Calendar events with RSVP, recurrence, waitlists and iCal export."
+  },
+  "messages": {
+    "events": "Events",
+    "createEvent": "Create event",
+    "eventDetails": "Event details",
+    "eventEditor": "Event editor",
+    "openEvents": "Open events",
+    "eventsFeatureDisabled": "The events feature is currently disabled.",
+    "eventsFeatureDisabledNotice": "The events feature is currently disabled.",
+    "eventsPermissionRequired": "Events permissions required.",
+    "eventsViewRequired": "Events permissions are required.",
+    "eventsCreateRequired": "Create permissions required.",
+    "eventsEditRequired": "Edit permissions required.",
+    "eventsDeleteRequired": "Delete permissions required.",
+    "eventNotFound": "Event not found.",
+    "searchEvents": "Search events",
+    "allVisibility": "All visibility",
+    "maxParticipants": "Max participants",
+    "allDay": "All day",
+    "recurrence": "Recurrence",
+    "interval": "Interval",
+    "endsAt": "Ends at",
+    "reminderEnabled": "Reminder enabled",
+    "reminderMinutes": "Reminder minutes",
+    "icalExport": "iCal export",
+    "waitlist": "Waitlist",
+    "capacity": "Capacity",
+    "participants": "Participants",
+    "deleteEventConfirm": "Delete this event?",
+    "permissionsSaved": "Permissions saved."
+  }
+}

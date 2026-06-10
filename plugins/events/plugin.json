@@ -1,0 +1,6 @@
+{
+  "key": "events",
+  "name": "Events",
+  "version": "0.1.0",
+  "description": "Calendar events with RSVP, recurrence, role-based visibility, waitlists and iCal export."
+}
