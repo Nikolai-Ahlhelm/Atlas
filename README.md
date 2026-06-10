@@ -141,6 +141,11 @@ _________________
 
 # 📒 Changelog
 
+## Version 0.3.2 
+- New: Changelog Plugin (Track changes in sortable and customizable tables)
+- New: Navbar editor (Visual editor for your navbar in the admin settings)
+- Bugfixes and minor improvements
+ 
 ## Version 0.3.1 
 - New: Translations added to plugins
 - Fix: Admin menu not working properly 

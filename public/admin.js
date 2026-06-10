@@ -3,6 +3,11 @@
   let roles = [];
   let plugins = [];
   let formsTree = [];
+  let navigationState = { topbar: [] };
+  let navigationCatalog = { plugins: [], docs: [], cmsPages: [], roles: [] };
+  let selectedNavigationNodeId = null;
+  let draggedNavigationNodeId = null;
+  let toastTimeout = null;
   let currentFormSelection = null;
   let formDraftFields = [];
   let expandedFormFieldKeys = new Set();
@@ -68,10 +73,11 @@
   async function refresh() {
     try {
       clearAdminError();
-      const [userRows, roleRows, pluginRows] = await Promise.all([
+      const [userRows, roleRows, pluginRows, navigationResponse] = await Promise.all([
         fetchJson('/api/admin/users'),
         fetchJson('/api/admin/roles'),
-        fetchJson('/api/admin/plugins')
+        fetchJson('/api/admin/plugins'),
+        fetchJson('/api/admin/navigation')
       ]);
       const formsFeature = Array.isArray(pluginRows) ? pluginRows.find((plugin) => plugin.key === 'forms') : null;
       const formsResponse = formsFeature ? await fetchJson('/api/admin/forms') : null;
@@ -79,10 +85,18 @@
       roles = Array.isArray(roleRows) ? roleRows : [];
       plugins = Array.isArray(pluginRows) ? pluginRows : [];
       formsTree = Array.isArray(formsResponse?.tree) ? formsResponse.tree : [];
+      navigationState = normalizeNavigationState(navigationResponse?.navigation);
+      navigationCatalog = {
+        plugins: Array.isArray(navigationResponse?.plugins) ? navigationResponse.plugins : [],
+        docs: Array.isArray(navigationResponse?.docs) ? navigationResponse.docs : [],
+        cmsPages: Array.isArray(navigationResponse?.cmsPages) ? navigationResponse.cmsPages : [],
+        roles: Array.isArray(navigationResponse?.roles) ? navigationResponse.roles : []
+      };
       renderPlugins();
       renderUsers();
       renderRoles();
       renderFormsTree();
+      renderNavigationEditor();
       renderAdminTabs();
       await restoreFormSelection();
     } catch (error) {
@@ -460,12 +474,6 @@
     const form = new FormData(event.currentTarget);
     const payload = Object.fromEntries(form.entries());
     payload.entra_enabled = form.get('entra_enabled') === 'true' ? 'true' : 'false';
-    try {
-      JSON.parse(payload.menu_links || '[]');
-    } catch {
-      alert(msg('invalidMenuJson', 'The menu links are not valid JSON.'));
-      return;
-    }
     try {
       await fetchJson('/api/admin/settings', {
         method: 'POST',
@@ -999,6 +1007,432 @@
     if (backButton) backButton.hidden = !hasSelection;
   }
 
+  function normalizeNavigationState(value) {
+    return {
+      topbar: normalizeNavigationNodes(value?.topbar)
+    };
+  }
+
+  function normalizeNavigationNodes(nodes) {
+    return Array.isArray(nodes) ? nodes.map((node) => normalizeNavigationNode(node)).filter(Boolean) : [];
+  }
+
+  function normalizeNavigationNode(node) {
+    if (!node || typeof node !== 'object') return null;
+    const children = normalizeNavigationNodes(node.children);
+    const target = normalizeNavigationTarget(node.target);
+    const label = String(node.label || '').trim();
+    if (!label && !target && !children.length) return null;
+    return {
+      id: String(node.id || createNavigationId()),
+      label: label || defaultLabelForTarget(target),
+      roles: Array.isArray(node.roles) ? node.roles.map(String).map((role) => role.trim()).filter(Boolean) : [],
+      target,
+      children
+    };
+  }
+
+  function normalizeNavigationTarget(target) {
+    const type = String(target?.type || '').trim();
+    if (type === 'custom') {
+      const href = String(target?.href || '').trim();
+      return href ? { type, href } : null;
+    }
+    if (type === 'plugin') {
+      const pluginKey = String(target?.pluginKey || '').trim();
+      return pluginKey ? { type, pluginKey } : null;
+    }
+    if (type === 'doc' || type === 'cms') {
+      const slug = String(target?.slug || '').trim();
+      return slug ? { type, slug } : null;
+    }
+    if (type === 'home') return { type };
+    return null;
+  }
+
+  function createNavigationId() {
+    return `nav_${Math.random().toString(36).slice(2, 10)}`;
+  }
+
+  function renderNavigationEditor() {
+    const target = document.querySelector('#navigationPanel');
+    if (!target) return;
+    const tree = navigationState.topbar || [];
+    let selected = findNavigationNode(tree, selectedNavigationNodeId)?.node || null;
+    if (!selected && tree[0]) {
+      selectedNavigationNodeId = tree[0].id;
+      selected = tree[0];
+    }
+    target.innerHTML = `
+      <div class="navigation-editor">
+        <div class="navigation-editor-layout">
+          <section class="panel-inline-section">
+            <div class="navigation-toolbar">
+              <div class="panel-head-actions">
+                <button class="button" type="button" data-add-nav-node="group">${msg('addGroup', '+ Group')}</button>
+                <button class="button" type="button" data-add-nav-node="custom">${msg('addLink', '+ Link')}</button>
+                <button class="button" type="button" data-add-nav-node="plugin">${msg('addPluginLink', '+ Plugin')}</button>
+                <button class="button" type="button" data-add-nav-node="doc">${msg('addDocLink', '+ Doc')}</button>
+                <button class="button" type="button" data-add-nav-node="cms">${msg('addPageLink', '+ Page')}</button>
+              </div>
+              <button class="button primary" type="button" data-save-navigation>${msg('saveNavigation', 'Save navigation')}</button>
+            </div>
+            <div class="navigation-tree">${renderNavigationList(tree, null)}</div>
+          </section>
+          <section class="panel-inline-section">
+            ${renderNavigationInspector(selected)}
+          </section>
+        </div>
+      </div>
+    `;
+
+    target.querySelectorAll('[data-add-nav-node]').forEach((button) => button.addEventListener('click', () => {
+      addNavigationNode(button.dataset.addNavNode || 'group');
+    }));
+    target.querySelector('[data-save-navigation]')?.addEventListener('click', saveNavigation);
+    target.querySelectorAll('[data-nav-select]').forEach((button) => button.addEventListener('click', () => {
+      selectedNavigationNodeId = button.dataset.navSelect;
+      renderNavigationEditor();
+    }));
+    target.querySelectorAll('[data-nav-delete]').forEach((button) => button.addEventListener('click', () => {
+      deleteNavigationNode(button.dataset.navDelete);
+    }));
+    target.querySelectorAll('[data-nav-add-child]').forEach((button) => button.addEventListener('click', () => {
+      addNavigationNode('group', button.dataset.navAddChild);
+    }));
+    target.querySelectorAll('[data-nav-drop-zone]').forEach((zone) => {
+      zone.addEventListener('dragover', handleNavigationZoneDragOver);
+      zone.addEventListener('dragleave', handleNavigationDragLeave);
+      zone.addEventListener('drop', handleNavigationZoneDrop);
+    });
+    target.querySelectorAll('[data-nav-row]').forEach((row) => {
+      row.addEventListener('dragstart', handleNavigationDragStart);
+      row.addEventListener('dragend', handleNavigationDragEnd);
+      row.addEventListener('dragover', handleNavigationRowDragOver);
+      row.addEventListener('dragleave', handleNavigationDragLeave);
+      row.addEventListener('drop', handleNavigationRowDrop);
+    });
+
+    const form = target.querySelector('#navigationInspectorForm');
+    if (form) {
+      form.addEventListener('change', handleNavigationInspectorChange);
+    }
+  }
+
+  function renderNavigationList(nodes, parentId) {
+    const list = Array.isArray(nodes) ? nodes : [];
+    const body = list.map((node, index) => `
+      ${renderNavigationDropZone(parentId, index)}
+      ${renderNavigationNode(node)}
+    `).join('');
+    return `${body}${renderNavigationDropZone(parentId, list.length)}`;
+  }
+
+  function renderNavigationNode(node) {
+    const selected = node.id === selectedNavigationNodeId;
+    return `
+      <div class="navigation-node">
+        <div class="navigation-node-row ${selected ? 'active' : ''}" draggable="true" data-nav-row="${esc(node.id)}">
+          <button class="navigation-node-main" type="button" data-nav-select="${esc(node.id)}">
+            <span class="navigation-node-handle">⋮⋮</span>
+            <span class="navigation-node-copy">
+              <strong>${esc(node.label || defaultLabelForTarget(node.target) || msg('untitled', 'Untitled'))}</strong>
+              <span>${esc(describeNavigationNode(node))}</span>
+            </span>
+          </button>
+          <div class="row-actions">
+            <button class="icon-button" type="button" data-nav-add-child="${esc(node.id)}" aria-label="${esc(msg('addChild', 'Add child'))}">+</button>
+            <button class="icon-button" type="button" data-nav-delete="${esc(node.id)}" aria-label="${esc(msg('delete', 'Delete'))}">×</button>
+          </div>
+        </div>
+        ${node.children?.length ? `<div class="navigation-node-children">${renderNavigationList(node.children, node.id)}</div>` : ''}
+      </div>
+    `;
+  }
+
+  function renderNavigationDropZone(parentId, index) {
+    return `<div class="navigation-drop-zone" data-nav-drop-zone data-parent-id="${esc(parentId || '')}" data-drop-index="${index}"></div>`;
+  }
+
+  function renderNavigationInspector(node) {
+    if (!node) {
+      return `
+        <div class="empty-state content-empty-state">
+          <h1>${msg('selectNavigationNode', 'Select a navigation item')}</h1>
+          <p>${msg('selectNavigationNodeText', 'Pick an item on the left to rename it, change the target or adjust visibility.')}</p>
+        </div>
+      `;
+    }
+    const targetType = navigationTargetType(node);
+    return `
+      <form id="navigationInspectorForm" class="modal-form">
+        <input type="hidden" name="id" value="${esc(node.id)}">
+        <label>${msg('label', 'Label')} <input name="label" value="${esc(node.label || '')}" required></label>
+        <label>${msg('visibleForRoles', 'Visible for roles')} <input name="roles" value="${esc((node.roles || []).join(', '))}" placeholder="Admins, Users"></label>
+        <label>${msg('targetType', 'Target type')}
+          <select name="target_type">
+            <option value="group" ${targetType === 'group' ? 'selected' : ''}>${esc(msg('groupOnly', 'Group only'))}</option>
+            <option value="home" ${targetType === 'home' ? 'selected' : ''}>${esc(msg('documentationHome', 'Documentation home'))}</option>
+            <option value="custom" ${targetType === 'custom' ? 'selected' : ''}>${esc(msg('customUrl', 'Custom URL'))}</option>
+            <option value="plugin" ${targetType === 'plugin' ? 'selected' : ''}>${esc(msg('pluginPage', 'Plugin page'))}</option>
+            <option value="doc" ${targetType === 'doc' ? 'selected' : ''}>${esc(msg('documentationPage', 'Documentation page'))}</option>
+            <option value="cms" ${targetType === 'cms' ? 'selected' : ''}>${esc(msg('cmsPage', 'CMS page'))}</option>
+          </select>
+        </label>
+        ${targetType === 'custom' ? `<label>${msg('url', 'URL')} <input name="target_href" value="${esc(node.target?.href || '')}" placeholder="/blog"></label>` : ''}
+        ${targetType === 'plugin' ? `<label>${msg('pluginPage', 'Plugin page')} <select name="target_plugin">${renderNavigationPluginOptions(node.target?.pluginKey)}</select></label>` : ''}
+        ${targetType === 'doc' ? `<label>${msg('documentationPage', 'Documentation page')} <select name="target_doc">${renderNavigationDocOptions(node.target?.slug)}</select></label>` : ''}
+        ${targetType === 'cms' ? `<label>${msg('cmsPage', 'CMS page')} <select name="target_cms">${renderNavigationCmsOptions(node.target?.slug)}</select></label>` : ''}
+      </form>
+    `;
+  }
+
+  function renderNavigationPluginOptions(selectedKey) {
+    return navigationCatalog.plugins.map((plugin) => `<option value="${esc(plugin.key)}" ${plugin.key === selectedKey ? 'selected' : ''}>${esc(plugin.label)}${plugin.enabled ? '' : ` (${esc(msg('disabled', 'Disabled'))})`}</option>`).join('');
+  }
+
+  function renderNavigationDocOptions(selectedSlug) {
+    return navigationCatalog.docs.map((doc) => `<option value="${esc(doc.slug)}" ${doc.slug === selectedSlug ? 'selected' : ''}>${esc(doc.title)}</option>`).join('');
+  }
+
+  function renderNavigationCmsOptions(selectedSlug) {
+    return navigationCatalog.cmsPages.map((page) => `<option value="${esc(page.slug)}" ${page.slug === selectedSlug ? 'selected' : ''}>${esc(page.title)}</option>`).join('');
+  }
+
+  function navigationTargetType(node) {
+    return node?.target?.type || 'group';
+  }
+
+  function describeNavigationNode(node) {
+    const type = navigationTargetType(node);
+    if (type === 'group') return msg('group', 'Group');
+    if (type === 'home') return msg('documentationHome', 'Documentation home');
+    if (type === 'custom') return node.target?.href || msg('customUrl', 'Custom URL');
+    if (type === 'plugin') return navigationCatalog.plugins.find((plugin) => plugin.key === node.target?.pluginKey)?.label || msg('pluginPage', 'Plugin page');
+    if (type === 'doc') return navigationCatalog.docs.find((doc) => doc.slug === node.target?.slug)?.title || msg('documentationPage', 'Documentation page');
+    if (type === 'cms') return navigationCatalog.cmsPages.find((page) => page.slug === node.target?.slug)?.title || msg('cmsPage', 'CMS page');
+    return '';
+  }
+
+  function defaultLabelForTarget(target) {
+    if (!target) return '';
+    if (target.type === 'home') return msg('home', 'Home');
+    if (target.type === 'custom') return target.href || msg('newLink', 'New link');
+    if (target.type === 'plugin') return navigationCatalog.plugins.find((plugin) => plugin.key === target.pluginKey)?.label || msg('pluginPage', 'Plugin page');
+    if (target.type === 'doc') return navigationCatalog.docs.find((doc) => doc.slug === target.slug)?.title || msg('documentationPage', 'Documentation page');
+    if (target.type === 'cms') return navigationCatalog.cmsPages.find((page) => page.slug === target.slug)?.title || msg('cmsPage', 'CMS page');
+    return '';
+  }
+
+  function createDefaultNavigationNode(kind) {
+    if (kind === 'home') return { id: createNavigationId(), label: msg('home', 'Home'), roles: [], target: { type: 'home' }, children: [] };
+    if (kind === 'plugin') {
+      const plugin = navigationCatalog.plugins[0];
+      return { id: createNavigationId(), label: plugin?.label || msg('pluginPage', 'Plugin page'), roles: [], target: plugin ? { type: 'plugin', pluginKey: plugin.key } : null, children: [] };
+    }
+    if (kind === 'doc') {
+      const doc = navigationCatalog.docs[0];
+      return { id: createNavigationId(), label: doc?.title || msg('documentationPage', 'Documentation page'), roles: [], target: doc ? { type: 'doc', slug: doc.slug } : null, children: [] };
+    }
+    if (kind === 'cms') {
+      const page = navigationCatalog.cmsPages[0];
+      return { id: createNavigationId(), label: page?.title || msg('cmsPage', 'CMS page'), roles: [], target: page ? { type: 'cms', slug: page.slug } : null, children: [] };
+    }
+    if (kind === 'custom') return { id: createNavigationId(), label: msg('newLink', 'New link'), roles: [], target: { type: 'custom', href: '/' }, children: [] };
+    return { id: createNavigationId(), label: msg('newGroup', 'New group'), roles: [], target: null, children: [] };
+  }
+
+  function addNavigationNode(kind, parentId = null) {
+    const nextNode = createDefaultNavigationNode(kind);
+    mutateActiveNavigationTree((tree) => {
+      if (!parentId) {
+        tree.push(nextNode);
+        return;
+      }
+      const parent = findNavigationNode(tree, parentId)?.node;
+      if (!parent) {
+        tree.push(nextNode);
+        return;
+      }
+      parent.children = Array.isArray(parent.children) ? parent.children : [];
+      parent.children.push(nextNode);
+    });
+    selectedNavigationNodeId = nextNode.id;
+    renderNavigationEditor();
+  }
+
+  function deleteNavigationNode(nodeId) {
+    mutateActiveNavigationTree((tree) => {
+      removeNavigationNode(tree, nodeId);
+    });
+    if (selectedNavigationNodeId === nodeId) selectedNavigationNodeId = null;
+    renderNavigationEditor();
+  }
+
+  function handleNavigationInspectorChange(event) {
+    const form = event.currentTarget;
+    const id = form.elements.id.value;
+    mutateActiveNavigationTree((tree) => {
+      const record = findNavigationNode(tree, id);
+      if (!record?.node) return;
+      record.node.label = form.elements.label.value.trim();
+      record.node.roles = parseRoles(form.elements.roles.value);
+      const targetType = form.elements.target_type.value;
+      if (targetType === 'group') record.node.target = null;
+      else if (targetType === 'home') record.node.target = { type: 'home' };
+      else if (targetType === 'custom') record.node.target = { type: 'custom', href: form.elements.target_href.value.trim() || '/' };
+      else if (targetType === 'plugin') record.node.target = { type: 'plugin', pluginKey: form.elements.target_plugin.value };
+      else if (targetType === 'doc') record.node.target = { type: 'doc', slug: form.elements.target_doc.value };
+      else if (targetType === 'cms') record.node.target = { type: 'cms', slug: form.elements.target_cms.value };
+      if (!record.node.label) record.node.label = defaultLabelForTarget(record.node.target) || msg('newGroup', 'New group');
+    });
+    renderNavigationEditor();
+  }
+
+  async function saveNavigation() {
+    try {
+      const response = await fetchJson('/api/admin/navigation', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ navigation: navigationState })
+      });
+      navigationState = normalizeNavigationState(response?.navigation || navigationState);
+      renderNavigationEditor();
+      showToast(msg('navigationSaved', 'Navigation saved.'), 'success');
+    } catch (error) {
+      showError(error);
+    }
+  }
+
+  function mutateActiveNavigationTree(mutator) {
+    const nextTree = cloneValue(navigationState.topbar || []);
+    mutator(nextTree);
+    navigationState = { ...navigationState, topbar: nextTree };
+  }
+
+  function cloneValue(value) {
+    return JSON.parse(JSON.stringify(value));
+  }
+
+  function findNavigationNode(nodes, id, parentId = null) {
+    for (let index = 0; index < (nodes || []).length; index += 1) {
+      const node = nodes[index];
+      if (node.id === id) return { node, index, siblings: nodes, parentId };
+      const child = findNavigationNode(node.children || [], id, node.id);
+      if (child) return child;
+    }
+    return null;
+  }
+
+  function removeNavigationNode(nodes, id) {
+    for (let index = 0; index < (nodes || []).length; index += 1) {
+      if (nodes[index].id === id) return nodes.splice(index, 1)[0];
+      const child = removeNavigationNode(nodes[index].children || [], id);
+      if (child) return child;
+    }
+    return null;
+  }
+
+  function handleNavigationDragStart(event) {
+    draggedNavigationNodeId = event.currentTarget.dataset.navRow;
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', draggedNavigationNodeId);
+    event.currentTarget.classList.add('is-dragging');
+  }
+
+  function handleNavigationDragEnd(event) {
+    draggedNavigationNodeId = null;
+    clearNavigationDropTargets();
+    event.currentTarget.classList.remove('is-dragging');
+  }
+
+  function handleNavigationZoneDragOver(event) {
+    event.preventDefault();
+    if (!draggedNavigationNodeId) return;
+    clearNavigationDropTargets();
+    event.currentTarget.classList.add('is-drop-target', 'is-insert-target');
+  }
+
+  function handleNavigationZoneDrop(event) {
+    event.preventDefault();
+    const parentId = event.currentTarget.dataset.parentId || null;
+    const index = Number(event.currentTarget.dataset.dropIndex || 0);
+    clearNavigationDropTargets();
+    moveNavigationNode(parentId, index);
+  }
+
+  function handleNavigationRowDragOver(event) {
+    event.preventDefault();
+    if (!draggedNavigationNodeId) return;
+    const targetId = event.currentTarget.dataset.navRow;
+    const source = findNavigationNode(navigationState.topbar || [], draggedNavigationNodeId)?.node;
+    if (!source || source.id === targetId || isNavigationDescendant(source, targetId)) return;
+    clearNavigationDropTargets();
+    event.currentTarget.classList.add('is-drop-target', 'is-child-drop-target');
+  }
+
+  function handleNavigationRowDrop(event) {
+    event.preventDefault();
+    const targetId = event.currentTarget.dataset.navRow;
+    clearNavigationDropTargets();
+    moveNavigationNode(targetId, null, { asChild: true });
+  }
+
+  function handleNavigationDragLeave(event) {
+    const nextTarget = event.relatedTarget;
+    if (nextTarget && event.currentTarget.contains(nextTarget)) return;
+    event.currentTarget.classList.remove('is-drop-target', 'is-insert-target', 'is-child-drop-target');
+  }
+
+  function clearNavigationDropTargets() {
+    document.querySelectorAll('.navigation-node-row, .navigation-drop-zone').forEach((element) => {
+      element.classList.remove('is-drop-target', 'is-insert-target', 'is-child-drop-target');
+    });
+  }
+
+  function moveNavigationNode(targetParentId, index, options = {}) {
+    const sourceId = draggedNavigationNodeId;
+    if (!sourceId) return;
+    mutateActiveNavigationTree((tree) => {
+      const sourceRecord = findNavigationNode(tree, sourceId);
+      if (!sourceRecord?.node) return;
+      if (targetParentId && (sourceRecord.node.id === targetParentId || isNavigationDescendant(sourceRecord.node, targetParentId))) return;
+      const node = removeNavigationNode(tree, sourceId);
+      if (!node) return;
+      if (options.asChild && targetParentId) {
+        const parent = findNavigationNode(tree, targetParentId)?.node;
+        if (!parent) {
+          tree.push(node);
+          return;
+        }
+        parent.children = Array.isArray(parent.children) ? parent.children : [];
+        parent.children.push(node);
+        return;
+      }
+      if (!targetParentId) {
+        const nextIndex = sourceRecord.siblings === tree && sourceRecord.index < index ? index - 1 : index;
+        tree.splice(Math.max(0, nextIndex), 0, node);
+        return;
+      }
+      const parent = findNavigationNode(tree, targetParentId)?.node;
+      if (!parent) {
+        const nextIndex = sourceRecord.siblings === tree && sourceRecord.index < index ? index - 1 : index;
+        tree.splice(Math.max(0, nextIndex), 0, node);
+        return;
+      }
+      parent.children = Array.isArray(parent.children) ? parent.children : [];
+      const nextIndex = sourceRecord.siblings === parent.children && sourceRecord.index < index ? index - 1 : index;
+      parent.children.splice(Math.max(0, nextIndex), 0, node);
+    });
+    draggedNavigationNodeId = null;
+    renderNavigationEditor();
+  }
+
+  function isNavigationDescendant(node, targetId) {
+    if (!node || !targetId) return false;
+    return (node.children || []).some((child) => child.id === targetId || isNavigationDescendant(child, targetId));
+  }
+
   function setActiveFormSubtab(tab) {
     activeFormSubtab = ['fields', 'permissions'].includes(tab) ? tab : 'fields';
     document.querySelectorAll('[data-form-subtab]').forEach((button) => {
@@ -1027,7 +1461,7 @@
   }
 
   function normalizeAdminTab(value) {
-    return ['plugins', 'forms', 'content', 'access', 'instance'].includes(value) ? value : 'content';
+    return ['plugins', 'forms', 'content', 'navigation', 'access', 'instance'].includes(value) ? value : 'content';
   }
 
   function setActiveTab(tab) {
@@ -1098,6 +1532,24 @@
 
   function showError(error) {
     renderAdminError(error);
+  }
+
+  function showToast(message, tone = 'success') {
+    let toast = document.querySelector('[data-admin-toast]');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.dataset.adminToast = 'true';
+      toast.className = 'admin-toast';
+      toast.setAttribute('role', 'status');
+      document.body.append(toast);
+    }
+    toast.className = `admin-toast ${tone === 'success' ? 'success' : ''}`;
+    toast.textContent = message;
+    toast.hidden = false;
+    window.clearTimeout(toastTimeout);
+    toastTimeout = window.setTimeout(() => {
+      toast.hidden = true;
+    }, 2600);
   }
 
   function clearAdminError() {

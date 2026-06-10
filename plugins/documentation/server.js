@@ -228,9 +228,10 @@ export default function createDocumentationPlugin({ manifest, rootDir }) {
     const readable = catalog.policies.filter((item) => canReadPolicy(context.user, item));
     const current = policy || catalog.home || readable[0];
     const active = activeSlug || (policy ? policy.slug : '__home');
+    const currentHref = policy ? `/policy/${encodeURIComponent(policy.slug)}` : '/';
     const body = `
       <div class="app-shell">
-        ${context.renderTopbar(context.user, context.locale, '/')}
+        ${context.renderTopbar(context.user, context.locale, currentHref)}
         <div class="workspace">
           <aside class="sidebar" id="sidebar">
             <div class="sidebar-head">

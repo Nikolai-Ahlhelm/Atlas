@@ -1,0 +1,6 @@
+{
+  "key": "changelog",
+  "name": "Changelog",
+  "version": "0.1.0",
+  "description": "Configurable changelog lists with permissions, filters, analytics and export."
+}
