@@ -15,6 +15,7 @@ COPY src ./src
 COPY public ./public
 COPY content ./content
 COPY locales ./locales
+COPY plugins ./plugins
 
 RUN mkdir -p /app/data && chown -R node:node /app
 
