@@ -117,20 +117,27 @@
   function renderPlugins() {
     const target = document.querySelector('#pluginsPanel');
     if (!target) return;
-    target.innerHTML = plugins.map((plugin) => `
+    const sortedPlugins = [...plugins].sort((a, b) => Number(b.enabled) - Number(a.enabled) || String(a.label).localeCompare(String(b.label)));
+    target.innerHTML = sortedPlugins.map((plugin) => `
       <article class="plugin-card">
         <div class="plugin-card-head">
           <div>
-            <h3>${esc(plugin.label)}</h3>
+            <div class="plugin-card-title-row">
+              <h3>${esc(plugin.label)}</h3>
+              <span class="plugin-status ${plugin.enabled ? 'enabled' : 'disabled'}">${plugin.enabled ? msg('enabled', 'Enabled') : msg('disabled', 'Disabled')}</span>
+            </div>
             <p>${esc(plugin.description)}</p>
           </div>
           <label class="switch">
             <input type="checkbox" data-plugin-toggle="${esc(plugin.key)}" ${plugin.enabled ? 'checked' : ''}>
             <span class="switch-track"></span>
-            <span class="switch-label">${plugin.enabled ? msg('enabled', 'Enabled') : msg('disabled', 'Disabled')}</span>
+            <span class="switch-label">${msg('active', 'Active')}</span>
           </label>
         </div>
-        <div class="hint">${esc(plugin.href)}</div>
+        <div class="plugin-card-actions">
+          <a class="button small ghost" href="${esc(plugin.href)}">${msg('open', 'Open')}</a>
+          ${plugin.adminHref ? `<a class="button small" href="${esc(plugin.adminHref)}">${msg('manage', 'Manage')}</a>` : ''}
+        </div>
       </article>
     `).join('');
 
@@ -1018,8 +1025,16 @@
 
   function normalizeNavigationState(value) {
     return {
-      topbar: normalizeNavigationNodes(value?.topbar)
+      topbar: normalizeNavigationNodes(value?.topbar),
+      overflowLabel: String(value?.overflowLabel || msg('more', 'More')).trim() || msg('more', 'More'),
+      maxVisibleItems: normalizeNavigationMaxVisibleItems(value?.maxVisibleItems)
     };
+  }
+
+  function normalizeNavigationMaxVisibleItems(value) {
+    const count = Number(value);
+    if (!Number.isFinite(count)) return 5;
+    return Math.min(12, Math.max(1, Math.round(count)));
   }
 
   function normalizeNavigationNodes(nodes) {
@@ -1074,6 +1089,18 @@
     }
     target.innerHTML = `
       <div class="navigation-editor">
+        <section class="navigation-overflow-settings">
+          <div>
+            <strong>${msg('responsiveNavigation', 'Responsive navigation')}</strong>
+            <p>${msg('responsiveNavigationText', 'When the topbar gets crowded, Atlas groups remaining items under an automatic overflow menu.')}</p>
+          </div>
+          <label>${msg('overflowLabel', 'Overflow label')}
+            <input name="overflowLabel" value="${esc(navigationState.overflowLabel || msg('more', 'More'))}" data-nav-overflow-label>
+          </label>
+          <label>${msg('visibleItemsBeforeOverflow', 'Visible items before overflow')}
+            <input name="maxVisibleItems" type="number" min="1" max="12" value="${esc(navigationState.maxVisibleItems || 5)}" data-nav-max-visible>
+          </label>
+        </section>
         <div class="navigation-editor-layout">
           <section class="panel-inline-section">
             <div class="navigation-toolbar">
@@ -1099,6 +1126,12 @@
       addNavigationNode(button.dataset.addNavNode || 'group');
     }));
     target.querySelector('[data-save-navigation]')?.addEventListener('click', saveNavigation);
+    target.querySelector('[data-nav-overflow-label]')?.addEventListener('input', (event) => {
+      navigationState = { ...navigationState, overflowLabel: event.target.value.trim() || msg('more', 'More') };
+    });
+    target.querySelector('[data-nav-max-visible]')?.addEventListener('input', (event) => {
+      navigationState = { ...navigationState, maxVisibleItems: normalizeNavigationMaxVisibleItems(event.target.value) };
+    });
     target.querySelectorAll('[data-nav-select]').forEach((button) => button.addEventListener('click', () => {
       selectedNavigationNodeId = button.dataset.navSelect;
       renderNavigationEditor();

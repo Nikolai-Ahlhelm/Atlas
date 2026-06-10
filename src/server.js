@@ -893,7 +893,12 @@ function renderApp({ user, activeSlug, policy, notice, locale }) {
 
 function renderTopbar(user, locale, currentHref = '/') {
   const settings = getSettings();
-  const links = filterVisibleNavigationNodes(getNavigationConfig(locale).topbar, user);
+  const navigationConfig = getNavigationConfig(locale);
+  const links = filterVisibleNavigationNodes(navigationConfig.topbar, user);
+  const maxVisibleItems = normalizeNavigationMaxVisibleItems(navigationConfig.maxVisibleItems);
+  const shouldGroupOverflow = links.length > maxVisibleItems + 1;
+  const primaryLinks = shouldGroupOverflow ? links.slice(0, maxVisibleItems) : links;
+  const overflowLinks = shouldGroupOverflow ? links.slice(maxVisibleItems) : [];
   return `
     <header class="topbar">
       <div class="brand">
@@ -901,7 +906,10 @@ function renderTopbar(user, locale, currentHref = '/') {
         <a href="/" class="brand-mark">${settings.logo_image ? `<img src="${escapeAttribute(settings.logo_image)}" alt="">` : escapeHtml(settings.logo_text)}</a>
         <a href="/" class="brand-title">${escapeHtml(settings.app_name)}</a>
       </div>
-      <nav class="top-links">${links.map((link) => renderTopbarLink(link, currentHref)).join('')}</nav>
+      <nav class="top-links" aria-label="${tf(locale, 'mainNavigation', 'Main navigation')}">
+        ${primaryLinks.map((link) => renderTopbarLink(link, currentHref)).join('')}
+        ${overflowLinks.length ? renderTopbarOverflow(overflowLinks, currentHref, navigationConfig.overflowLabel || tf(locale, 'more', 'More')) : ''}
+      </nav>
       <div class="top-actions">
         <button class="button user-menu-trigger" type="button" data-profile-open>👤 ${escapeHtml(user.name)}</button>
       </div>
@@ -909,6 +917,22 @@ function renderTopbar(user, locale, currentHref = '/') {
     ${renderProfileDialog(user, locale)}
   `;
 }
+
+function renderTopbarOverflow(links, currentHref, label) {
+  const active = links.some((link) => navigationNodeContainsActive(link, currentHref));
+  return `
+    <div class="top-link-dropdown top-link-overflow ${active ? 'active' : ''}" data-nav-dropdown>
+      <button class="top-link-trigger ${active ? 'active' : ''}" type="button" data-nav-dropdown-trigger aria-expanded="false">
+        <span>${escapeHtml(label || 'More')}</span>
+        <span class="top-link-caret">▾</span>
+      </button>
+      <div class="top-link-menu top-link-menu-overflow">
+        ${links.map((link) => renderTopbarMenuItem(link, currentHref, 0)).join('')}
+      </div>
+    </div>
+  `;
+}
+
 function renderTopbarLink(link, currentHref) {
   const resolved = resolveNavigationTarget(link.target);
   if (Array.isArray(link.children) && link.children.length) {
@@ -1449,11 +1473,11 @@ function renderAdmin(user, locale) {
 function renderAdminTabsNav(locale, { mode = 'buttons', activeTab = '', activePluginKey = '' } = {}) {
   const pluginAdminPages = loadedPlugins.filter((plugin) => plugin.adminPage);
   const items = [
-    { key: 'instance', label: tf(locale, 'instanceSettings', 'Instance') },
+    { key: 'content', label: tf(locale, 'pages', 'Pages') },
     { key: 'navigation', label: tf(locale, 'navigationEditor', 'Navigation') },
-    { key: 'access', label: tf(locale, 'accessManagement', 'Access') },
     { key: 'plugins', label: tf(locale, 'plugins', 'Plugins') },
-    { key: 'content', label: tf(locale, 'pages', 'Pages') }
+    { key: 'access', label: tf(locale, 'accessManagement', 'Access') },
+    { key: 'instance', label: tf(locale, 'instanceSettings', 'Instance') }
   ];
   const renderItem = (item) => {
     const activeClass = item.key === activeTab ? ' active' : '';
@@ -1462,14 +1486,19 @@ function renderAdminTabsNav(locale, { mode = 'buttons', activeTab = '', activePl
     }
     return `<button class="admin-tab-button${activeClass}" type="button" data-admin-tab="${escapeAttribute(item.key)}">${escapeHtml(item.label)}</button>`;
   };
-  const hasActivePlugin = pluginAdminPages.some((plugin) => plugin.key === activePluginKey);
+  const activePlugin = pluginAdminPages.find((plugin) => plugin.key === activePluginKey);
+  const hasActivePlugin = Boolean(activePlugin);
   const pluginMenu = pluginAdminPages.length
     ? `
       <details class="admin-plugin-menu ${hasActivePlugin ? 'is-active' : ''}" ${hasActivePlugin ? 'open' : ''}>
-        <summary class="admin-tab-button${hasActivePlugin ? ' active' : ''}">${tf(locale, 'pluginPages', 'Plugin pages')}</summary>
-        <div class="admin-plugin-menu-list">
+        <summary class="admin-plugin-summary${hasActivePlugin ? ' active' : ''}">
+          <span class="admin-plugin-summary-kicker">${tf(locale, 'pluginPages', 'Plugin pages')}</span>
+          <strong>${escapeHtml(activePlugin ? getPluginFeatureCopy(activePlugin.key, locale, activePlugin.feature).label : tf(locale, 'choosePluginAdmin', 'Choose workspace'))}</strong>
+          <span class="admin-plugin-count">${pluginAdminPages.length}</span>
+        </summary>
+        <div class="admin-plugin-menu-list" role="list">
           ${pluginAdminPages.map((plugin) => `
-            <a class="admin-plugin-menu-link ${plugin.key === activePluginKey ? 'active' : ''}" href="${escapeHtml(plugin.adminPage.href)}">
+            <a class="admin-plugin-menu-link ${plugin.key === activePluginKey ? 'active' : ''}" href="${escapeHtml(plugin.adminPage.href)}" role="listitem">
               <strong>${escapeHtml(getPluginFeatureCopy(plugin.key, locale, plugin.feature).label)}</strong>
               <span>${escapeHtml(getPluginFeatureCopy(plugin.key, locale, plugin.feature).description)}</span>
             </a>
@@ -1480,8 +1509,10 @@ function renderAdminTabsNav(locale, { mode = 'buttons', activeTab = '', activePl
     : '';
   return `
     <nav class="admin-tabs" aria-label="${tf(locale, 'adminSections', 'Admin sections')}">
-      ${items.map(renderItem).join('')}
-      ${pluginMenu}
+      <div class="admin-tab-group admin-tab-group-core">
+        ${items.map(renderItem).join('')}
+      </div>
+      ${pluginMenu ? `<div class="admin-tab-group admin-tab-group-plugins">${pluginMenu}</div>` : ''}
     </nav>
   `;
 }
@@ -2116,12 +2147,14 @@ function listRoles() {
 function listPlugins(locale = DEFAULT_SETTINGS.default_language) {
   const rows = db.prepare('SELECT key, enabled FROM plugins').all();
   const enabledByKey = new Map(rows.map((row) => [row.key, Boolean(row.enabled)]));
+  const pluginAdminHrefByKey = new Map(loadedPlugins.filter((plugin) => plugin.adminPage?.href).map((plugin) => [plugin.key, plugin.adminPage.href]));
   return Object.values(FEATURE_DEFINITIONS).map((feature) => {
     const localized = getPluginFeatureCopy(feature.key, locale, feature);
     return {
       ...feature,
       label: localized.label,
       description: localized.description,
+      adminHref: pluginAdminHrefByKey.get(feature.key) || '',
       enabled: enabledByKey.has(feature.key) ? enabledByKey.get(feature.key) : feature.defaultEnabled
     };
   });
@@ -2766,12 +2799,25 @@ function normalizeNavigationConfig(value, locale = DEFAULT_SETTINGS.default_lang
     const parsed = typeof value === 'string' ? JSON.parse(value) : value;
     const topbar = normalizeNavigationNodeList(parsed?.topbar);
     const config = {
-      topbar: topbar.length ? topbar : fallback.topbar
+      topbar: topbar.length ? topbar : fallback.topbar,
+      overflowLabel: normalizeNavigationOverflowLabel(parsed?.overflowLabel, locale),
+      maxVisibleItems: normalizeNavigationMaxVisibleItems(parsed?.maxVisibleItems)
     };
     return JSON.stringify(config, null, 2);
   } catch {
     return JSON.stringify(fallback, null, 2);
   }
+}
+
+function normalizeNavigationOverflowLabel(value, locale = DEFAULT_SETTINGS.default_language) {
+  const label = String(value || '').trim();
+  return label || tf(locale, 'more', 'More');
+}
+
+function normalizeNavigationMaxVisibleItems(value) {
+  const count = Number(value);
+  if (!Number.isFinite(count)) return 5;
+  return Math.min(12, Math.max(1, Math.round(count)));
 }
 
 function parseNavigationConfig(value, locale = DEFAULT_SETTINGS.default_language) {
@@ -2870,7 +2916,9 @@ function buildDefaultNavigationConfig(locale = DEFAULT_SETTINGS.default_language
       children: []
     }));
   return {
-    topbar: [...customTopbar, ...pluginTopbar]
+    topbar: [...customTopbar, ...pluginTopbar],
+    overflowLabel: tf(locale, 'more', 'More'),
+    maxVisibleItems: 5
   };
 }
 
