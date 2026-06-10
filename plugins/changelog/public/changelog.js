@@ -29,6 +29,7 @@
     activeColumnMenuStyle: null,
     activeEntryPicker: '',
     activeEntryPickerStyle: null,
+    toastTimeout: null,
     editor: {
       open: false,
       mode: 'create',
@@ -99,6 +100,7 @@
 
   async function loadAdminList(slug) {
     try {
+      clearError();
       const detail = await fetchJson(`/api/admin/changelogs/list?slug=${encodeURIComponent(slug)}`);
       state.selectedSlug = detail.slug;
       state.detail = detail;
@@ -116,6 +118,7 @@
 
   async function loadPublicList() {
     try {
+      clearError();
       const detail = await fetchJson(`/api/changelogs/list?slug=${encodeURIComponent(state.selectedSlug)}`);
       state.detail = detail;
       hydrateTagDrafts(detail);
@@ -184,8 +187,8 @@
           <p>${esc(state.detail.description || '')}</p>
         </div>
         <div class="row-actions">
-        <!--  ${state.detail.can?.edit ? `<button class="button primary" type="button" id="publicNewEntryButton">${esc(msg('newEntry', 'New entry'))}</button>` : ''} -->
-        <!--  ${state.detail.can?.manage ? `<a class="button ghost" href="${esc(state.detail.adminHref)}">${esc(msg('openAdmin', 'Open admin'))}</a>` : ''} -->
+          ${state.detail.can?.edit ? `<button class="button primary" type="button" id="publicNewEntryButton">${esc(msg('newEntry', 'New entry'))}</button>` : ''}
+          ${state.detail.can?.manage ? `<a class="button ghost" href="${esc(state.detail.adminHref)}">${esc(msg('openAdmin', 'Open admin'))}</a>` : ''}
         </div>
       </div>
       ${state.detail.introText ? `<section class="panel changelog-intro-panel"><p>${esc(state.detail.introText)}</p></section>` : ''}
@@ -913,6 +916,7 @@
   async function saveInlineEntry(event) {
     event?.preventDefault();
     syncAllInlineEditorValues();
+    const mode = state.editor.mode;
     const payload = {
       slug: state.detail.slug,
       id: state.editor.entryId || undefined,
@@ -927,6 +931,7 @@
       });
       closeEntryEditor();
       await reloadData();
+      showToast(mode === 'edit' ? msg('entrySaved', 'Entry saved.') : msg('entryCreated', 'Entry created.'));
     } catch (error) {
       renderError(error);
     }
@@ -1418,6 +1423,7 @@
       });
       await refreshAdmin();
       if (result?.slug) await loadAdminList(result.slug);
+      showToast(msg('settingsSaved', 'Settings saved.'));
     } catch (error) {
       renderError(error);
     }
@@ -1435,6 +1441,7 @@
         })
       });
       await loadAdminList(state.detail.slug);
+      showToast(msg('columnsSaved', 'Columns saved.'));
     } catch (error) {
       renderError(error);
     }
@@ -1456,6 +1463,7 @@
         })
       });
       await loadAdminList(state.detail.slug);
+      showToast(msg('permissionsSaved', 'Permissions saved.'));
     } catch (error) {
       renderError(error);
     }
@@ -1490,6 +1498,7 @@
         dialog.remove();
         await refreshAdmin();
         if (result?.slug) await loadAdminList(result.slug);
+        showToast(msg('listCreated', 'List created.'));
       } catch (error) {
         renderError(error);
       }
@@ -1591,6 +1600,7 @@
     if (box) {
       box.hidden = false;
       box.innerHTML = `<strong>${esc(msg('unexpectedError', 'An unexpected error occurred.'))}</strong><p>${esc(error?.message || String(error))}</p>`;
+      box.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     } else {
       renderPublicError(error);
     }
@@ -1601,6 +1611,24 @@
       box.hidden = true;
       box.textContent = '';
     });
+  }
+
+  function showToast(message) {
+    let toast = document.querySelector('[data-changelog-toast]');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.className = 'admin-toast success';
+      toast.setAttribute('data-changelog-toast', '');
+      toast.setAttribute('role', 'status');
+      toast.setAttribute('aria-live', 'polite');
+      document.body.appendChild(toast);
+    }
+    toast.textContent = message;
+    toast.hidden = false;
+    clearTimeout(state.toastTimeout);
+    state.toastTimeout = setTimeout(() => {
+      toast.hidden = true;
+    }, 2400);
   }
 
   function formatDateTime(value) {

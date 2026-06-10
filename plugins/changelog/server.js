@@ -22,7 +22,7 @@ export default function createChangelogPlugin({ manifest, rootDir }) {
   let db = null;
   let helpers = null;
 
-    const feature = {
+  const feature = {
     key: manifest.key || 'changelog',
     label: manifest.name || 'Changelog',
     href: '/changelogs',
@@ -294,9 +294,10 @@ export default function createChangelogPlugin({ manifest, rootDir }) {
   function renderChangelogListPage(context) {
     const settings = context.getSettings();
     const slug = decodeSlugFromPath(context.url.pathname, '/changelogs/');
+    const currentHref = slug ? `/changelogs/${encodeURIComponent(slug)}` : '/changelogs';
     const body = `
       <div class="app-shell changelog-shell changelog-single-shell" data-changelog-app data-list-slug="${context.escapeAttribute(slug)}">
-        ${context.renderTopbar(context.user, context.locale, '/changelogs')}
+        ${context.renderTopbar(context.user, context.locale, currentHref)}
         <main class="content changelog-page-shell">
           <section class="policy changelog-page">
             <div id="changelogPublicError" class="notice admin-error" hidden></div>
@@ -347,10 +348,11 @@ export default function createChangelogPlugin({ manifest, rootDir }) {
   function renderChangelogAdminPage(context) {
     const settings = context.getSettings();
     const slug = decodeSlugFromPath(context.url.pathname, '/admin/changelogs/');
+    const currentHref = slug ? `/admin/changelogs/${encodeURIComponent(slug)}` : '/admin/changelogs';
     const featureCopy = context.getPluginFeatureCopy(feature.key, context.locale, feature);
     const body = `
       <div class="app-shell">
-        ${context.renderTopbar(context.user, context.locale, '/admin/changelogs')}
+        ${context.renderTopbar(context.user, context.locale, currentHref)}
         <main class="admin-page changelog-admin-page" data-changelog-admin-page data-list-slug="${context.escapeAttribute(slug)}">
           <div class="admin-header">
             <div>
@@ -491,7 +493,12 @@ export default function createChangelogPlugin({ manifest, rootDir }) {
   }
 
   function decodeSlugFromPath(pathname, prefix) {
-    return decodeURIComponent(String(pathname || '').slice(prefix.length)).trim();
+    const raw = String(pathname || '').slice(prefix.length);
+    try {
+      return decodeURIComponent(raw).trim();
+    } catch {
+      return raw.trim();
+    }
   }
 
   function handleGetAdminList(context) {
@@ -568,7 +575,12 @@ export default function createChangelogPlugin({ manifest, rootDir }) {
     const now = new Date().toISOString();
 
     for (let index = 0; index < columns.length; index += 1) {
-      const normalized = normalizeColumnPayload(columns[index], index, context);
+      let normalized = null;
+      try {
+        normalized = normalizeColumnPayload(columns[index], index, context);
+      } catch (error) {
+        return context.sendJson(context.res, 400, { error: error?.message || context.tf(context.locale, 'invalidColumn', 'Invalid column configuration.') });
+      }
       if (CHANGELOG_RESERVED_COLUMN_KEYS.has(normalized.key)) {
         return context.sendJson(context.res, 400, { error: `${context.tf(context.locale, 'columnKeyReserved', 'Column key is reserved')}: ${normalized.key}` });
       }
@@ -1463,7 +1475,8 @@ export default function createChangelogPlugin({ manifest, rootDir }) {
   }
 
   function csvEscape(value) {
-    const text = String(value ?? '');
+    let text = String(value ?? '');
+    if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
     if (!/[",\r\n]/.test(text)) return text;
     return `"${text.replace(/"/g, '""')}"`;
   }

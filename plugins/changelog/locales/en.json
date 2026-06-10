@@ -95,6 +95,13 @@
     "duplicateColumnKey": "Duplicate column key",
     "resetFilters": "Reset filters",
     "newEntry": "New entry",
-    "search": "Search"
+    "search": "Search",
+    "entrySaved": "Entry saved.",
+    "entryCreated": "Entry created.",
+    "settingsSaved": "Settings saved.",
+    "columnsSaved": "Columns saved.",
+    "permissionsSaved": "Permissions saved.",
+    "listCreated": "List created.",
+    "invalidColumn": "Invalid column configuration."
   }
 }

@@ -95,6 +95,13 @@
     "duplicateColumnKey": "Doppelter Spaltenschlüssel",
     "resetFilters": "Filter zurücksetzen",
     "newEntry": "Neuer Eintrag",
-    "search": "Suchen"
+    "search": "Suchen",
+    "entrySaved": "Eintrag gespeichert.",
+    "entryCreated": "Eintrag erstellt.",
+    "settingsSaved": "Einstellungen gespeichert.",
+    "columnsSaved": "Spalten gespeichert.",
+    "permissionsSaved": "Berechtigungen gespeichert.",
+    "listCreated": "Liste erstellt.",
+    "invalidColumn": "Ungültige Spaltenkonfiguration."
   }
 }

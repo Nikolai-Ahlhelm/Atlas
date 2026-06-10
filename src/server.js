@@ -7,6 +7,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const CONTENT_DIR = join(ROOT, 'content');
+const DOCS_DIR = join(CONTENT_DIR, 'docs');
+const POLICY_DIR = join(CONTENT_DIR, 'policies');
+const HOME_PATH = join(CONTENT_DIR, 'home.md');
 const LOCALES_DIR = join(ROOT, 'locales');
 const CMS_DIR = join(CONTENT_DIR, 'cms');
 const PUBLIC_DIR = join(ROOT, 'public');
@@ -70,7 +73,8 @@ const DEFAULT_SETTINGS = {
   copyright_holder: '',
   menu_links: JSON.stringify([
     { label: 'Home', href: '/', roles: [] }
-  ])
+  ]),
+  navigation_config: ''
 };
 
 const CORE_FEATURE_DEFINITIONS = {
@@ -258,6 +262,8 @@ async function route(req, res) {
   if (url.pathname === '/api/admin/plugins' && req.method === 'POST') return requireAdmin(user, res, () => handleUpdatePlugin(req, res, locale));
   if (url.pathname === '/api/admin/settings' && req.method === 'GET') return requireAdmin(user, res, () => sendJson(res, 200, getSettings()));
   if (url.pathname === '/api/admin/settings' && req.method === 'POST') return requireAdmin(user, res, () => handleUpdateSettings(req, res));
+  if (url.pathname === '/api/admin/navigation' && req.method === 'GET') return requireAdmin(user, res, () => sendJson(res, 200, getNavigationAdminPayload(locale)));
+  if (url.pathname === '/api/admin/navigation' && req.method === 'POST') return requireAdmin(user, res, () => handleUpdateNavigation(req, res, locale));
   if (url.pathname === '/api/cms/studio/tree' && req.method === 'GET') return requireCmsEditor(user, res, () => sendJson(res, 200, getCmsStudioTree()));
   if (url.pathname === '/api/cms/studio/page' && req.method === 'GET') return requireCmsEditor(user, res, () => handleGetCmsStudioPage(res, url));
   if (url.pathname === '/api/cms/studio/page' && req.method === 'POST') return requireCmsEditor(user, res, () => handleSaveCmsStudioPage(req, res, user));
@@ -887,11 +893,7 @@ function renderApp({ user, activeSlug, policy, notice, locale }) {
 
 function renderTopbar(user, locale, currentHref = '/') {
   const settings = getSettings();
-  const pluginLinks = listPlugins()
-    .filter((plugin) => plugin.enabled)
-    .map((plugin) => ({ label: plugin.label, href: plugin.href, roles: [], automatic: true }));
-  const customLinks = filterVisibleMenuLinks(parseMenuLinks(settings.menu_links), user);
-  const links = [...pluginLinks, ...customLinks.filter((link) => !pluginLinks.some((plugin) => plugin.href === link.href))];
+  const links = filterVisibleNavigationNodes(getNavigationConfig(locale).topbar, user);
   return `
     <header class="topbar">
       <div class="brand">
@@ -908,8 +910,9 @@ function renderTopbar(user, locale, currentHref = '/') {
   `;
 }
 function renderTopbarLink(link, currentHref) {
+  const resolved = resolveNavigationTarget(link.target);
   if (Array.isArray(link.children) && link.children.length) {
-    const active = link.children.some((child) => isNavActive(currentHref, child.href));
+    const active = navigationNodeContainsActive(link, currentHref);
     return `
       <div class="top-link-dropdown ${active ? 'active' : ''}" data-nav-dropdown>
         <button class="top-link-trigger ${active ? 'active' : ''}" type="button" data-nav-dropdown-trigger aria-expanded="false">
@@ -917,12 +920,26 @@ function renderTopbarLink(link, currentHref) {
           <span class="top-link-caret">▾</span>
         </button>
         <div class="top-link-menu">
-          ${link.children.map((child) => `<a class="top-link-menu-item ${isNavActive(currentHref, child.href) ? 'active' : ''}" href="${escapeHtml(child.href)}">${escapeHtml(child.label)}</a>`).join('')}
+          ${link.children.map((child) => renderTopbarMenuItem(child, currentHref, 0)).join('')}
         </div>
       </div>
     `;
   }
-  return `<a class="${isNavActive(currentHref, link.href) ? 'active' : ''}" href="${escapeHtml(link.href)}">${escapeHtml(link.label)}</a>`;
+  if (!resolved?.href) return '';
+  return `<a class="${isNavActive(currentHref, resolved.href) ? 'active' : ''}" href="${escapeHtml(resolved.href)}">${escapeHtml(link.label)}</a>`;
+}
+
+function renderTopbarMenuItem(node, currentHref, depth = 0) {
+  const resolved = resolveNavigationTarget(node.target);
+  const padding = 14 + (depth * 16);
+  if (Array.isArray(node.children) && node.children.length) {
+    const label = resolved?.href
+      ? `<a class="top-link-menu-item top-link-menu-group-link ${navigationNodeContainsActive(node, currentHref) ? 'active' : ''}" style="padding-left:${padding}px" href="${escapeHtml(resolved.href)}">${escapeHtml(node.label)}</a>`
+      : `<span class="top-link-menu-group-label" style="padding-left:${padding}px">${escapeHtml(node.label)}</span>`;
+    return `${label}${node.children.map((child) => renderTopbarMenuItem(child, currentHref, depth + 1)).join('')}`;
+  }
+  if (!resolved?.href) return '';
+  return `<a class="top-link-menu-item ${isNavActive(currentHref, resolved.href) ? 'active' : ''}" style="padding-left:${padding}px" href="${escapeHtml(resolved.href)}">${escapeHtml(node.label)}</a>`;
 }
 
 function renderSidebar(items, user, activeSlug) {
@@ -1326,6 +1343,15 @@ function renderAdmin(user, locale) {
               </div>
             </div>
           </div>
+          <div class="panel settings-panel" data-admin-panel="navigation">
+            <div class="panel-head">
+              <div>
+                <h2>${tf(locale, 'navigationEditor', 'Navigation')}</h2>
+                <p class="hint">${tf(locale, 'navigationEditorText', 'Arrange the top navigation with drag and drop.')}</p>
+              </div>
+            </div>
+            <div id="navigationPanel" class="content-editor-body navigation-editor-shell"></div>
+          </div>
           <div class="panel" data-admin-panel="access">
             <div class="panel-head">
               <h2>${t(locale, 'users')}</h2>
@@ -1393,7 +1419,6 @@ function renderAdmin(user, locale) {
               <label>Entra Redirect URI <input name="entra_redirect_uri" placeholder="http://localhost:3000/auth/entra/callback" value="${escapeHtml(settings.entra_redirect_uri)}"></label>
               <label>${t(locale, 'footerLine')} <input name="footer_text" value="${escapeHtml(settings.footer_text)}"></label>
               <label>${t(locale, 'copyrightHolder')} <input name="copyright_holder" placeholder="${escapeHtml(settings.app_name)}" value="${escapeHtml(settings.copyright_holder)}"></label>
-              <label>${t(locale, 'menuLinksJson')} <textarea name="menu_links" class="code-input">${escapeHtml(settings.menu_links)}</textarea></label>
               <button class="button primary" type="submit">${t(locale, 'saveSettings')}</button>
             </form>
           </div>
@@ -1418,6 +1443,7 @@ function renderAdminTabsNav(locale, { mode = 'buttons', activeTab = '', activePl
   const pluginAdminPages = loadedPlugins.filter((plugin) => plugin.adminPage);
   const items = [
     { key: 'instance', label: tf(locale, 'instanceSettings', 'Instance') },
+    { key: 'navigation', label: tf(locale, 'navigationEditor', 'Navigation') },
     { key: 'access', label: tf(locale, 'accessManagement', 'Access') },
     { key: 'plugins', label: tf(locale, 'plugins', 'Plugins') },
     { key: 'content', label: tf(locale, 'pages', 'Pages') }
@@ -1728,6 +1754,7 @@ async function handleUpdateProfile(req, res, user) {
 
 async function handleUpdateSettings(req, res) {
   const payload = await readJson(req);
+  const current = getSettings();
   const settings = {
     app_name: String(payload.app_name || DEFAULT_SETTINGS.app_name).trim() || DEFAULT_SETTINGS.app_name,
     sidebar_title: String(payload.sidebar_title || DEFAULT_SETTINGS.sidebar_title).trim() || DEFAULT_SETTINGS.sidebar_title,
@@ -1760,7 +1787,8 @@ async function handleUpdateSettings(req, res) {
     entra_redirect_uri: String(payload.entra_redirect_uri || '').trim(),
     footer_text: String(payload.footer_text || '').trim(),
     copyright_holder: String(payload.copyright_holder || '').trim(),
-    menu_links: normalizeMenuLinks(payload.menu_links)
+    menu_links: payload.menu_links === undefined ? current.menu_links : normalizeMenuLinks(payload.menu_links),
+    navigation_config: payload.navigation_config === undefined ? current.navigation_config : normalizeNavigationConfig(payload.navigation_config)
   };
 
   logInfo('Applying settings update', {
@@ -2130,6 +2158,7 @@ function getSettings() {
   settings.entra_enabled = settings.entra_enabled === 'true' ? 'true' : 'false';
   if (!['network', 'image', 'static'].includes(settings.login_background_mode)) settings.login_background_mode = 'network';
   settings.menu_links = normalizeMenuLinks(settings.menu_links);
+  settings.navigation_config = normalizeNavigationConfig(settings.navigation_config, settings.default_language, { menuLinks: settings.menu_links });
   return settings;
 }
 
@@ -2664,6 +2693,206 @@ function normalizeMenuLinks(value) {
   return JSON.stringify(parseMenuLinks(text), null, 2);
 }
 
+function createNavigationId(prefix = 'nav') {
+  return `${prefix}_${randomBytes(6).toString('hex')}`;
+}
+
+function normalizeNavigationTarget(target) {
+  const type = String(target?.type || '').trim().toLowerCase();
+  if (type === 'plugin') {
+    const pluginKey = String(target?.pluginKey || '').trim();
+    return pluginKey ? { type, pluginKey } : null;
+  }
+  if (type === 'doc') {
+    const slug = String(target?.slug || '').trim();
+    return slug ? { type, slug } : null;
+  }
+  if (type === 'cms') {
+    const slug = String(target?.slug || '').trim();
+    return slug ? { type, slug } : null;
+  }
+  if (type === 'custom') {
+    const href = String(target?.href || '').trim();
+    return href ? { type, href } : null;
+  }
+  if (type === 'home') return { type };
+  return null;
+}
+
+function normalizeNavigationNodeList(nodes) {
+  return Array.isArray(nodes)
+    ? nodes.map((node) => normalizeNavigationNode(node)).filter(Boolean)
+    : [];
+}
+
+function normalizeNavigationNode(node) {
+  if (!node || typeof node !== 'object') return null;
+  const id = String(node.id || createNavigationId()).trim() || createNavigationId();
+  const label = String(node.label || '').trim();
+  const roles = Array.isArray(node.roles) ? node.roles.map((role) => String(role || '').trim()).filter(Boolean) : [];
+  const children = normalizeNavigationNodeList(node.children);
+  const target = normalizeNavigationTarget(node.target);
+  if (!label && !target && !children.length) return null;
+  if (!label && target) {
+    const defaultLabel = getNavigationTargetLabel(target);
+    if (defaultLabel) return { id, label: defaultLabel, roles, target, children };
+  }
+  if (!label) return null;
+  return { id, label, roles, target, children };
+}
+
+function normalizeNavigationConfig(value, locale = DEFAULT_SETTINGS.default_language, options = {}) {
+  const fallback = buildDefaultNavigationConfig(locale, options);
+  if (!value) return JSON.stringify(fallback, null, 2);
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+    const topbar = normalizeNavigationNodeList(parsed?.topbar);
+    const config = {
+      topbar: topbar.length ? topbar : fallback.topbar
+    };
+    return JSON.stringify(config, null, 2);
+  } catch {
+    return JSON.stringify(fallback, null, 2);
+  }
+}
+
+function parseNavigationConfig(value, locale = DEFAULT_SETTINGS.default_language) {
+  try {
+    return JSON.parse(normalizeNavigationConfig(value, locale));
+  } catch {
+    return buildDefaultNavigationConfig(locale);
+  }
+}
+
+function getNavigationTargetLabel(target) {
+  if (!target) return '';
+  if (target.type === 'home') return 'Home';
+  if (target.type === 'custom') return String(target.href || '').trim();
+  if (target.type === 'doc') {
+    const doc = loadCatalog().bySlug.get(String(target.slug || '').trim());
+    return doc?.title || titleFromSlug(String(target.slug || '').split('/').pop() || 'Documentation');
+  }
+  if (target.type === 'cms') {
+    const page = cmsCatalog.bySlug.get(String(target.slug || '').trim());
+    return page?.title || titleFromSlug(String(target.slug || '').split('/').pop() || 'Page');
+  }
+  if (target.type === 'plugin') {
+    const plugin = listPlugins().find((item) => item.key === String(target.pluginKey || '').trim());
+    return plugin?.label || titleFromSlug(String(target.pluginKey || '').replace(/[_-]+/g, ' '));
+  }
+  return '';
+}
+
+function resolveNavigationTarget(target) {
+  if (!target) return null;
+  if (target.type === 'home') return { href: '/', enabled: true, label: getNavigationTargetLabel(target), targetType: target.type };
+  if (target.type === 'custom') return { href: String(target.href || '').trim(), enabled: true, label: getNavigationTargetLabel(target), targetType: target.type };
+  if (target.type === 'doc') {
+    const doc = loadCatalog().bySlug.get(String(target.slug || '').trim());
+    if (!doc) return null;
+    return { href: `/policy/${encodeURIComponent(doc.slug)}`, enabled: true, label: doc.title, targetType: target.type, doc };
+  }
+  if (target.type === 'cms') {
+    const page = cmsCatalog.bySlug.get(String(target.slug || '').trim());
+    if (!page) return null;
+    return { href: `/page/${encodeURIComponent(page.slug)}`, enabled: true, label: page.title, targetType: target.type, page };
+  }
+  if (target.type === 'plugin') {
+    const plugin = listPlugins().find((item) => item.key === String(target.pluginKey || '').trim());
+    if (!plugin) return null;
+    return {
+      href: plugin.href,
+      enabled: Boolean(plugin.enabled),
+      label: plugin.label,
+      targetType: target.type,
+      plugin
+    };
+  }
+  return null;
+}
+
+function canSeeNavigationRoles(user, node) {
+  if (!Array.isArray(node?.roles) || !node.roles.length) return true;
+  if (user?.is_admin) return true;
+  return node.roles.some((role) => user?.roles?.includes(role));
+}
+
+function canSeeNavigationTarget(user, node, resolvedTarget) {
+  if (!canSeeNavigationRoles(user, node)) return false;
+  if (!resolvedTarget?.enabled) return false;
+  if (resolvedTarget.targetType === 'doc') return canReadPolicy(user, resolvedTarget.doc);
+  if (resolvedTarget.targetType === 'cms') return canReadCmsPage(user, resolvedTarget.page);
+  return true;
+}
+
+function convertMenuLinksToNavigationNodes(links) {
+  return (Array.isArray(links) ? links : []).map((link) => {
+    const children = convertMenuLinksToNavigationNodes(link.children || []);
+    return {
+      id: createNavigationId('top'),
+      label: String(link.label || '').trim(),
+      roles: Array.isArray(link.roles) ? link.roles.map(String) : [],
+      target: children.length ? null : { type: 'custom', href: String(link.href || '').trim() },
+      children
+    };
+  }).filter((node) => node.label && (node.target || node.children.length));
+}
+
+function buildDefaultNavigationConfig(locale = DEFAULT_SETTINGS.default_language, options = {}) {
+  const menuLinks = options.menuLinks === undefined ? DEFAULT_SETTINGS.menu_links : options.menuLinks;
+  const customTopbar = convertMenuLinksToNavigationNodes(parseMenuLinks(menuLinks));
+  const pluginTopbar = listPlugins(locale)
+    .filter((plugin) => plugin.enabled)
+    .filter((plugin) => !customTopbar.some((item) => resolveNavigationTarget(item.target)?.href === plugin.href))
+    .map((plugin) => ({
+      id: createNavigationId('plugin'),
+      label: plugin.label,
+      roles: [],
+      target: plugin.href === '/' ? { type: 'home' } : { type: 'plugin', pluginKey: plugin.key },
+      children: []
+    }));
+  return {
+    topbar: [...customTopbar, ...pluginTopbar]
+  };
+}
+
+function getNavigationConfig(locale = DEFAULT_SETTINGS.default_language) {
+  const settings = getSettings();
+  return parseNavigationConfig(settings.navigation_config, locale) || buildDefaultNavigationConfig(locale, { menuLinks: settings.menu_links });
+}
+
+function getNavigationAdminPayload(locale = DEFAULT_SETTINGS.default_language) {
+  const docsCatalog = loadCatalog();
+  return {
+    navigation: getNavigationConfig(locale),
+    plugins: listPlugins(locale).map((plugin) => ({
+      key: plugin.key,
+      label: plugin.label,
+      href: plugin.href,
+      enabled: plugin.enabled,
+      description: plugin.description
+    })),
+    docs: docsCatalog.policies.map((policy) => ({
+      slug: policy.slug,
+      title: policy.title,
+      roles: policy.roles || []
+    })),
+    cmsPages: cmsCatalog.pages.map((page) => ({
+      slug: page.slug,
+      title: page.title,
+      roles: page.roles || []
+    })),
+    roles: listRoles().map((role) => role.name)
+  };
+}
+
+async function handleUpdateNavigation(req, res, locale = DEFAULT_SETTINGS.default_language) {
+  const payload = await readJson(req);
+  const normalized = normalizeNavigationConfig(payload?.navigation, locale);
+  db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run('navigation_config', normalized);
+  sendJson(res, 200, { ok: true, navigation: parseNavigationConfig(normalized, locale) });
+}
+
 function normalizeMenuLinkList(links) {
   return links
     .map((link) => normalizeMenuLink(link))
@@ -2934,6 +3163,25 @@ function filterVisibleMenuLinks(links, user) {
       return canSeeMenuLink(user, link) ? link : null;
     })
     .filter(Boolean);
+}
+
+function filterVisibleNavigationNodes(nodes, user) {
+  return (Array.isArray(nodes) ? nodes : [])
+    .map((node) => {
+      const children = filterVisibleNavigationNodes(node.children || [], user);
+      const resolved = resolveNavigationTarget(node.target);
+      const visibleTarget = resolved && canSeeNavigationTarget(user, node, resolved);
+      if (children.length) return { ...node, children, target: visibleTarget ? node.target : null };
+      if (!visibleTarget) return null;
+      return { ...node, children: [] };
+    })
+    .filter(Boolean);
+}
+
+function navigationNodeContainsActive(node, currentHref) {
+  const resolved = resolveNavigationTarget(node.target);
+  if (resolved?.href && isNavActive(currentHref, resolved.href)) return true;
+  return Array.isArray(node.children) && node.children.some((child) => navigationNodeContainsActive(child, currentHref));
 }
 
 function removeMenuLinkByHref(links, href) {
@@ -3425,6 +3673,9 @@ function buildPluginContext(extra = {}) {
     listPlugins,
     isPluginEnabled,
     getSettings,
+    getNavigationConfig,
+    resolveNavigationTarget,
+    filterVisibleNavigationNodes,
     resolveLocale,
     renderShell,
     renderTopbar,
@@ -3499,4 +3750,3 @@ function formatDisplayDate(value, locale = 'en') {
     return date.toISOString().slice(0, 10);
   }
 }
-
