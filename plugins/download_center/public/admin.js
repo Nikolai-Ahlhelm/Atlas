@@ -133,6 +133,7 @@
       });
       await refresh();
       if (result?.id) await loadDownloadFile(result.id);
+      window.DisplayPopupMsg?.(msg('fileSaved', 'File saved.'));
     } catch (error) {
       renderError(error);
     }
@@ -232,6 +233,7 @@
         dialog.remove();
         await refresh();
         if (result?.id) await loadDownloadFile(result.id);
+        window.DisplayPopupMsg?.(msg('fileCreated', 'File created.'));
       } catch (error) {
         renderError(error);
       }

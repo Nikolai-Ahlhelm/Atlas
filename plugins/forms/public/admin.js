@@ -257,6 +257,7 @@
       const result = await fetchJson('/api/admin/forms/form', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
       await refresh();
       if (result?.slug) await loadForm(result.slug);
+      window.DisplayPopupMsg?.(msg('formSaved', 'Form saved.'));
     } catch (error) {
       renderError(error);
     }
@@ -307,6 +308,7 @@
         dialog.remove();
         await refresh();
         if (result?.slug) await loadForm(result.slug);
+        window.DisplayPopupMsg?.(msg('formCreated', 'Form created.'));
       } catch (error) {
         renderError(error);
       }

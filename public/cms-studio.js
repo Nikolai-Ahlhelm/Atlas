@@ -69,6 +69,7 @@
       form.elements.relative_path.value = page.relativePath || '';
       form.elements.title.value = page.meta?.title || '';
       form.elements.coverImage.value = page.meta?.coverImage || '';
+      form.elements.layout.value = page.meta?.layout === 'contained' ? 'contained' : 'full';
       form.elements.roles.value = Array.isArray(page.meta?.roles) ? page.meta.roles.join(', ') : '';
       form.elements.description.value = page.meta?.description || '';
       form.elements.excerpt.value = page.meta?.excerpt || '';
@@ -89,6 +90,7 @@
           slug: form.get('slug'),
           title: form.get('title'),
           coverImage: form.get('coverImage'),
+          layout: form.get('layout'),
           roles: parseCsv(form.get('roles')),
           description: form.get('description'),
           excerpt: form.get('excerpt'),
@@ -97,6 +99,7 @@
       });
       await refresh();
       if (result?.slug) await loadPage(result.slug);
+      window.DisplayPopupMsg?.(msg('pageSaved', 'Page saved.'));
     } catch (error) {
       renderError(error);
     }
@@ -124,6 +127,12 @@
         <label>${msg('pageSlug', 'Page slug')} <input name="slug" placeholder="about-us" required></label>
         <label>${msg('title', 'Title')} <input name="title" placeholder="About us"></label>
         <label>${msg('coverImageUrl', 'Cover image URL')} <input name="coverImage" placeholder="https://..."></label>
+        <label>${msg('pageWidth', 'Page width')}
+          <select name="layout">
+            <option value="full" selected>${msg('pageWidthFull', 'Full width')}</option>
+            <option value="contained">${msg('pageWidthContained', 'Readable width')}</option>
+          </select>
+        </label>
         <label>${msg('description', 'Description')} <textarea name="description"></textarea></label>
         <label>${msg('excerpt', 'Excerpt')} <textarea name="excerpt"></textarea></label>
         <label>${msg('rolesCsv', 'Roles (comma separated)')} <input name="roles" placeholder="Users"></label>
@@ -149,6 +158,7 @@
             slug: form.get('slug'),
             title: form.get('title'),
             coverImage: form.get('coverImage'),
+            layout: form.get('layout'),
             roles: parseCsv(form.get('roles')),
             description: form.get('description'),
             excerpt: form.get('excerpt'),
@@ -158,6 +168,7 @@
         dialog.remove();
         await refresh();
         if (result?.slug) await loadPage(result.slug);
+        window.DisplayPopupMsg?.(msg('pageCreated', 'Page created.'));
       } catch (error) {
         renderError(error);
       }

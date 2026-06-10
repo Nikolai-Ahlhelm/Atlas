@@ -7,7 +7,6 @@
   let navigationCatalog = { plugins: [], docs: [], cmsPages: [], roles: [] };
   let selectedNavigationNodeId = null;
   let draggedNavigationNodeId = null;
-  let toastTimeout = null;
   let currentFormSelection = null;
   let formDraftFields = [];
   let expandedFormFieldKeys = new Set();
@@ -144,6 +143,7 @@
         });
         plugins = Array.isArray(response.plugins) ? response.plugins : plugins;
         renderPlugins();
+        showToast(msg('pluginSettingsSaved', 'Plugin settings saved.'));
       } catch (error) {
         showError(error);
       }
@@ -404,6 +404,7 @@
         });
         dialog.remove();
         await refresh();
+        showToast(msg('userSaved', 'User saved.'));
       } catch (error) {
         showError(error);
       }
@@ -431,6 +432,7 @@
         });
         dialog.remove();
         await refresh();
+        showToast(msg('roleSaved', 'Role saved.'));
       } catch (error) {
         showError(error);
       }
@@ -480,6 +482,7 @@
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(payload)
       });
+      window.DisplayPopupMsgAfterReload?.(msg('settingsSaved', 'Settings saved.'));
       location.reload();
     } catch (error) {
       showError(error);
@@ -508,6 +511,7 @@
       });
       await refresh();
       await loadPage(String(form.get('slug') || ''));
+      showToast(msg('pageSaved', 'Page saved.'));
     } catch (error) {
       showError(error);
     }
@@ -529,6 +533,7 @@
       });
       await refresh();
       await loadCategory(String(form.get('relative_dir') || ''));
+      showToast(msg('categorySaved', 'Category saved.'));
     } catch (error) {
       showError(error);
     }
@@ -555,6 +560,7 @@
       });
       await refresh();
       if (result?.slug) await loadForm(result.slug);
+      showToast(msg('formSaved', 'Form saved.'));
     } catch (error) {
       showError(error);
     }
@@ -617,6 +623,7 @@
         dialog.remove();
         await refresh();
         if (result?.slug) await loadPage(result.slug);
+        showToast(msg('pageCreated', 'Page created.'));
       } catch (error) {
         showError(error);
       }
@@ -665,6 +672,7 @@
         dialog.remove();
         await refresh();
         if (result?.relativeDir !== undefined) await loadCategory(result.relativeDir);
+        showToast(msg('categoryCreated', 'Category created.'));
       } catch (error) {
         showError(error);
       }
@@ -710,6 +718,7 @@
         dialog.remove();
         await refresh();
         if (result?.slug) await loadForm(result.slug);
+        showToast(msg('formCreated', 'Form created.'));
       } catch (error) {
         showError(error);
       }
@@ -1535,21 +1544,9 @@
   }
 
   function showToast(message, tone = 'success') {
-    let toast = document.querySelector('[data-admin-toast]');
-    if (!toast) {
-      toast = document.createElement('div');
-      toast.dataset.adminToast = 'true';
-      toast.className = 'admin-toast';
-      toast.setAttribute('role', 'status');
-      document.body.append(toast);
+    if (typeof window.DisplayPopupMsg === 'function') {
+      window.DisplayPopupMsg(message, { tone });
     }
-    toast.className = `admin-toast ${tone === 'success' ? 'success' : ''}`;
-    toast.textContent = message;
-    toast.hidden = false;
-    window.clearTimeout(toastTimeout);
-    toastTimeout = window.setTimeout(() => {
-      toast.hidden = true;
-    }, 2600);
   }
 
   function clearAdminError() {

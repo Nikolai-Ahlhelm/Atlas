@@ -1101,10 +1101,11 @@ function renderCmsCard(page) {
 
 function renderCmsPage({ user, locale, page }) {
   const settings = getSettings();
+  const layoutClass = page.layout === 'contained' ? 'cms-layout-contained' : 'cms-layout-full';
   const body = `
     <div class="app-shell">
-      ${renderTopbar(user, locale, '/pages')}
-      <main class="content cms-page-shell">
+      ${renderTopbar(user, locale, `/page/${encodeURIComponent(page.slug)}`)}
+      <main class="content cms-page-shell ${layoutClass}">
         <article class="cms-full-page">
           ${page.coverImage ? `<div class="cms-hero-media cms-page-cover"><img src="${escapeAttribute(page.coverImage)}" alt=""></div>` : ''}
           <header class="cms-page-header">
@@ -1162,6 +1163,12 @@ function renderCmsStudio(user, locale) {
                   <label>${tf(locale, 'title', 'Title')} <input name="title" required></label>
                   <label>${tf(locale, 'coverImageUrl', 'Cover image URL')} <input name="coverImage" placeholder="https://..."></label>
                   <label>${tf(locale, 'rolesCsv', 'Roles (comma separated)')} <input name="roles" placeholder="Users"></label>
+                  <label>${tf(locale, 'pageWidth', 'Page width')}
+                    <select name="layout">
+                      <option value="full">${tf(locale, 'pageWidthFull', 'Full width')}</option>
+                      <option value="contained">${tf(locale, 'pageWidthContained', 'Readable width')}</option>
+                    </select>
+                  </label>
                 </div>
                 <label>${tf(locale, 'description', 'Description')} <textarea name="description"></textarea></label>
                 <label>${tf(locale, 'excerpt', 'Excerpt')} <textarea name="excerpt"></textarea></label>
@@ -1489,24 +1496,27 @@ function renderLogin(req, user, locale) {
     : '';
   const body = `
     <main class="login-page">
-      <section class="login-visual login-${escapeHtml(settings.login_background_mode)}"${backgroundStyle}>
-        ${settings.login_background_mode === 'network' ? '<canvas class="network-canvas" data-network-bg></canvas>' : ''}
-        <div class="login-copy">
-          <p class="eyebrow">${escapeHtml(settings.login_eyebrow)}</p>
-          <h1>${escapeHtml(settings.login_title)}</h1>
-          <p>${escapeHtml(settings.login_text)}</p>
-        </div>
-      </section>
-      <section class="login-card">
-        <form class="auth-form" action="/api/login" method="post">
-          <h2>${t(locale, 'login')}</h2>
-          <label>${t(locale, 'email')} <input name="email" type="email" autocomplete="email" required></label>
-          <label>${t(locale, 'password')} <input name="password" type="password" autocomplete="current-password" required></label>
-          <button class="button primary full" type="submit">${t(locale, 'login')}</button>
-        </form>
-        <a class="button full ${hasEntra ? 'ghost' : 'disabled'}" href="${hasEntra ? '/auth/entra/start' : '#'}">${t(locale, 'entraLogin')}</a>
-        ${hasEntra ? '' : `<p class="hint">${t(locale, 'entraNotConfigured')}</p>`}
-      </section>
+      <div class="login-layout">
+        <section class="login-visual login-${escapeHtml(settings.login_background_mode)}"${backgroundStyle}>
+          ${settings.login_background_mode === 'network' ? '<canvas class="network-canvas" data-network-bg></canvas>' : ''}
+          <div class="login-visual-glow" aria-hidden="true"></div>
+          <div class="login-copy">
+            <p class="eyebrow">${escapeHtml(settings.login_eyebrow)}</p>
+            <h1>${escapeHtml(settings.login_title)}</h1>
+            <p>${escapeHtml(settings.login_text)}</p>
+          </div>
+        </section>
+        <section class="login-card">
+          <form class="auth-form" action="/api/login" method="post">
+            <h2>${t(locale, 'login')}</h2>
+            <label>${t(locale, 'email')} <input name="email" type="email" autocomplete="email" required></label>
+            <label>${t(locale, 'password')} <input name="password" type="password" autocomplete="current-password" required></label>
+            <button class="button primary full" type="submit">${t(locale, 'login')}</button>
+          </form>
+          <a class="button full ${hasEntra ? 'ghost' : 'disabled'}" href="${hasEntra ? '/auth/entra/start' : '#'}">${t(locale, 'entraLogin')}</a>
+          ${hasEntra ? '' : `<p class="hint">${t(locale, 'entraNotConfigured')}</p>`}
+        </section>
+      </div>
     </main>
   `;
   return renderShell({ title: t(locale, 'login'), body, settings, locale });
@@ -2019,6 +2029,7 @@ function getEditableCmsPage(slug) {
       description: String(parsed.meta.description || '').trim(),
       excerpt: String(parsed.meta.excerpt || '').trim(),
       coverImage: String(parsed.meta.coverImage || '').trim(),
+      layout: normalizeCmsPageLayout(parsed.meta.layout),
       roles: Array.isArray(parsed.meta.roles) ? parsed.meta.roles : []
     }
   };
@@ -2039,6 +2050,7 @@ async function handleSaveCmsStudioPage(req, res, user) {
   const description = String(payload.description || '').trim();
   const excerpt = String(payload.excerpt || '').trim();
   const coverImage = String(payload.coverImage || '').trim();
+  const layout = normalizeCmsPageLayout(payload.layout);
   const roles = normalizeRoleList(payload.roles);
   const markdown = String(payload.markdown || '');
 
@@ -2051,7 +2063,7 @@ async function handleSaveCmsStudioPage(req, res, user) {
   if (mode === 'update' && !existsSync(filePath)) return sendJson(res, 404, { error: 'CMS page not found.' });
 
   const raw = serializeCmsPage({
-    meta: { title, description, excerpt, coverImage, roles, editor: user.name || '' },
+    meta: { title, description, excerpt, coverImage, layout, roles, editor: user.name || '' },
     markdown: markdown.trim() || `# ${title}\n\nWrite your page here.\n`
   });
   writeFileSync(filePath, ensureTrailingNewline(raw), 'utf8');
@@ -2075,6 +2087,7 @@ function serializeCmsPage({ meta, markdown = '' }) {
   if (meta.description) lines.push(`description: ${String(meta.description).trim()}`);
   if (meta.excerpt) lines.push(`excerpt: ${String(meta.excerpt).trim()}`);
   if (meta.coverImage) lines.push(`coverImage: ${String(meta.coverImage).trim()}`);
+  lines.push(`layout: ${normalizeCmsPageLayout(meta.layout)}`);
   lines.push(`roles: [${normalizeRoleList(meta.roles).join(', ')}]`);
   lines.push('---', '', String(markdown || '').replace(/\r\n/g, '\n').replace(/^\n+/, ''));
   return lines.join('\n');
@@ -2238,11 +2251,16 @@ function createCmsPage(filePath, slug) {
     description: meta.description || '',
     excerpt: meta.excerpt || meta.description || '',
     coverImage: meta.coverImage || '',
+    layout: normalizeCmsPageLayout(meta.layout),
     roles,
     html: rendered.html,
     headings: rendered.headings,
     markdown
   };
+}
+
+function normalizeCmsPageLayout(value) {
+  return String(value || '').trim().toLowerCase() === 'contained' ? 'contained' : 'full';
 }
 
 

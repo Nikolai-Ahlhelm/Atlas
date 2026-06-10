@@ -41,6 +41,7 @@
     try {
       await fetchJson('/api/admin/documentation/reload', { method: 'POST' });
       await refresh();
+      window.DisplayPopupMsg?.(msg('documentationReloaded', 'Documentation reloaded.'));
     } catch (error) {
       showError(error);
     }
@@ -188,6 +189,7 @@
       });
       await refresh();
       await loadPage(String(form.get('slug') || ''));
+      window.DisplayPopupMsg?.(msg('pageSaved', 'Page saved.'));
     } catch (error) {
       showError(error);
     }
@@ -209,6 +211,7 @@
       });
       await refresh();
       await loadCategory(String(form.get('relative_dir') || ''));
+      window.DisplayPopupMsg?.(msg('categorySaved', 'Category saved.'));
     } catch (error) {
       showError(error);
     }
@@ -257,6 +260,7 @@
         dialog.remove();
         await refresh();
         if (result?.slug) await loadPage(result.slug);
+        window.DisplayPopupMsg?.(msg('pageCreated', 'Page created.'));
       } catch (error) {
         showError(error);
       }
@@ -305,6 +309,7 @@
         dialog.remove();
         await refresh();
         if (result?.relativeDir !== undefined) await loadCategory(result.relativeDir);
+        window.DisplayPopupMsg?.(msg('categoryCreated', 'Category created.'));
       } catch (error) {
         showError(error);
       }

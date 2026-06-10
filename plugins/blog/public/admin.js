@@ -107,6 +107,7 @@
       });
       await refresh();
       if (result?.slug) await loadPost(result.slug);
+      window.DisplayPopupMsg?.(msg('postSaved', 'Post saved.'));
     } catch (error) {
       renderError(error);
     }
@@ -177,6 +178,7 @@
         dialog.remove();
         await refresh();
         if (result?.slug) await loadPost(result.slug);
+        window.DisplayPopupMsg?.(msg('postCreated', 'Post created.'));
       } catch (error) {
         renderError(error);
       }
