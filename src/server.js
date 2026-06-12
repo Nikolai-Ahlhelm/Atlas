@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
-import { randomBytes, scryptSync, timingSafeEqual, createHash } from 'node:crypto';
+import { randomBytes, scryptSync, timingSafeEqual, createHash, createHmac, randomUUID } from 'node:crypto';
 import { readFileSync, readdirSync, existsSync, mkdirSync, statSync, writeFileSync, unlinkSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -20,10 +20,55 @@ const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '127.0.0.1';
 const COOKIE_NAME = 'atlas_session';
 const PACKAGE_JSON = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+const API_KEY_SCOPES = [
+  ['atlas.read', 'Read regular Atlas APIs'],
+  ['atlas.write', 'Write regular Atlas APIs'],
+  ['admin.read', 'Read administrative APIs'],
+  ['admin.write', 'Write administrative APIs'],
+  ['plugins.read', 'Read plugin metadata and plugin APIs'],
+  ['plugins.write', 'Write plugin configuration and plugin APIs']
+];
+const DEVELOPER_PERMISSION_KEYS = [
+  'developer.view',
+  'developer.create_api_key',
+  'developer.revoke_api_key',
+  'developer.manage_all_keys'
+];
+const WEBHOOK_PERMISSION_KEYS = [
+  'webhooks.view',
+  'webhooks.create',
+  'webhooks.edit',
+  'webhooks.delete',
+  'webhooks.test',
+  'webhooks.view_deliveries'
+];
+const WEBHOOK_EVENT_CATALOG = [
+  'user.created',
+  'user.updated',
+  'role.created',
+  'role.updated',
+  'plugin.enabled',
+  'plugin.disabled',
+  'announcement.created',
+  'announcement.updated',
+  'qa.question.created',
+  'qa.answer.created',
+  'tasks.card.created',
+  'tasks.card.updated',
+  'forum.thread.created',
+  'forms.submission.created',
+  'events.event.created',
+  'webhook.test'
+];
+const WEBHOOK_DELIVERY_STATUSES = new Set(['pending', 'delivered', 'failed', 'retrying']);
+const WEBHOOK_BACKOFF_MS = [60_000, 300_000, 900_000, 3_600_000, 21_600_000];
+const WEBHOOK_RESPONSE_LIMIT = 4096;
 let localesCache = null;
 let localesCacheSignature = '';
 let pluginLocalesCache = null;
 let pluginLocalesCacheSignature = '';
+let webhookWorker = null;
+let webhookProcessing = false;
 const FONT_FAMILIES = {
   manrope: '"Manrope", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif',
   jakarta: '"Plus Jakarta Sans", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif',
@@ -244,14 +289,30 @@ async function route(req, res) {
   if (url.pathname === '/auth/entra/start') return handleEntraStart(req, res);
   if (url.pathname === '/auth/entra/callback') return handleEntraCallback(req, res, url);
 
-  if (!user) return redirect(res, '/login');
+  if (!user) {
+    if (hasBearerToken(req) || url.pathname.startsWith('/api/')) return sendJson(res, 401, { error: 'Authentication required.' });
+    return redirect(res, '/login');
+  }
+  if (url.pathname.startsWith('/api/') && !requireApiKeyScopeForRequest(user, url, req.method, res)) return;
 
   if (await handlePluginRequest({ req, res, url, user, locale, settings })) return;
 
   if (url.pathname === '/api/me') return sendJson(res, 200, publicUser(user));
   if (url.pathname === '/api/profile' && req.method === 'GET') return sendJson(res, 200, publicUser(user));
   if (url.pathname === '/api/profile' && req.method === 'POST') return handleUpdateProfile(req, res, user);
+  if (url.pathname === '/api/developer/scopes' && req.method === 'GET') return requireDeveloperPermission(user, res, 'developer.view', () => sendJson(res, 200, { scopes: getApiScopeCatalog(), permissions: developerPermissionPayload(user) }));
+  if (url.pathname === '/api/developer/api-keys' && req.method === 'GET') return requireDeveloperPermission(user, res, 'developer.view', () => sendJson(res, 200, { keys: listApiKeysForUser(user), scopes: getApiScopeCatalog(), permissions: developerPermissionPayload(user) }));
+  if (url.pathname === '/api/developer/api-keys' && req.method === 'POST') return requireDeveloperPermission(user, res, 'developer.create_api_key', () => handleCreateApiKey(req, res, user));
+  if (url.pathname.startsWith('/api/developer/api-keys/') && url.pathname.endsWith('/revoke') && req.method === 'POST') return requireDeveloperPermission(user, res, 'developer.revoke_api_key', () => handleRevokeApiKey(res, url.pathname, user, false));
   if (url.pathname === '/api/plugins' && req.method === 'GET') return sendJson(res, 200, listPlugins(locale));
+  if (url.pathname === '/api/admin/webhooks/support-data' && req.method === 'GET') return requireWebhookPermission(user, res, 'webhooks.view', () => sendWebhookSupport(res, user));
+  if (url.pathname === '/api/admin/webhooks/endpoints' && req.method === 'GET') return requireWebhookPermission(user, res, 'webhooks.view', () => sendWebhookEndpoints(res, user));
+  if (url.pathname === '/api/admin/webhooks/endpoints' && req.method === 'POST') return handleSaveWebhookEndpoint(req, res, user);
+  if (url.pathname.startsWith('/api/admin/webhooks/endpoints/') && req.method === 'DELETE') return requireWebhookPermission(user, res, 'webhooks.delete', () => handleDeleteWebhookEndpoint(res, url.pathname));
+  if (url.pathname === '/api/admin/webhooks/test' && req.method === 'POST') return requireWebhookPermission(user, res, 'webhooks.test', () => handleSendWebhookTest(req, res));
+  if (url.pathname === '/api/admin/webhooks/deliveries' && req.method === 'GET') return requireWebhookPermission(user, res, 'webhooks.view_deliveries', () => sendWebhookDeliveries(res, url));
+  if (url.pathname.startsWith('/api/admin/webhooks/deliveries/') && url.pathname.endsWith('/retry') && req.method === 'POST') return requireWebhookPermission(user, res, 'webhooks.test', () => handleRetryWebhookDelivery(res, url.pathname));
+  if (url.pathname === '/api/admin/webhooks/permissions' && req.method === 'POST') return requireWebhookPermission(user, res, 'webhooks.edit', () => handleSaveWebhookPermissions(req, res));
   if (url.pathname === '/api/admin/users' && req.method === 'GET') return requireAdmin(user, res, () => sendJson(res, 200, listUsers()));
   if (url.pathname === '/api/admin/users' && req.method === 'POST') return requireAdmin(user, res, () => handleUpsertUser(req, res));
   if (url.pathname.startsWith('/api/admin/users/') && req.method === 'DELETE') return requireAdmin(user, res, () => handleDeleteUser(res, url.pathname));
@@ -260,6 +321,8 @@ async function route(req, res) {
   if (url.pathname.startsWith('/api/admin/roles/') && req.method === 'DELETE') return requireAdmin(user, res, () => handleDeleteRole(res, url.pathname));
   if (url.pathname === '/api/admin/plugins' && req.method === 'GET') return requireAdmin(user, res, () => sendJson(res, 200, listPlugins(locale)));
   if (url.pathname === '/api/admin/plugins' && req.method === 'POST') return requireAdmin(user, res, () => handleUpdatePlugin(req, res, locale));
+  if (url.pathname === '/api/admin/developer/api-keys' && req.method === 'GET') return requireDeveloperPermission(user, res, 'developer.manage_all_keys', () => sendJson(res, 200, { keys: listApiKeys({ all: true }), users: listUsers(), scopes: getApiScopeCatalog(), permissions: developerPermissionPayload(user) }));
+  if (url.pathname.startsWith('/api/admin/developer/api-keys/') && url.pathname.endsWith('/revoke') && req.method === 'POST') return requireDeveloperPermission(user, res, 'developer.manage_all_keys', () => handleRevokeApiKey(res, url.pathname, user, true));
   if (url.pathname === '/api/admin/settings' && req.method === 'GET') return requireAdmin(user, res, () => sendJson(res, 200, getSettings()));
   if (url.pathname === '/api/admin/settings' && req.method === 'POST') return requireAdmin(user, res, () => handleUpdateSettings(req, res));
   if (url.pathname === '/api/admin/navigation' && req.method === 'GET') return requireAdmin(user, res, () => sendJson(res, 200, getNavigationAdminPayload(locale)));
@@ -287,6 +350,10 @@ async function route(req, res) {
     if (!canManageCms(user)) return sendHtml(res, 403, renderCmsIndexPage({ user, locale, notice: 'CMS editor permissions are required.' }));
     return sendHtml(res, 200, renderCmsStudio(user, locale));
   }
+  if (url.pathname === '/developer') return requireDeveloperPermission(user, res, 'developer.view', () => sendHtml(res, 200, renderDeveloperPage(user, locale, { adminMode: false })));
+  if (url.pathname === '/admin/developer') return requireDeveloperPermission(user, res, 'developer.manage_all_keys', () => sendHtml(res, 200, renderDeveloperPage(user, locale, { adminMode: true })));
+  if (url.pathname === '/webhooks') return requireWebhookPermission(user, res, 'webhooks.view', () => redirect(res, '/admin/webhooks'));
+  if (url.pathname === '/admin/webhooks') return requireWebhookPermission(user, res, 'webhooks.view', () => sendHtml(res, 200, renderWebhooksAdminPage(user, locale)));
   if (url.pathname === '/admin') return requireAdmin(user, res, () => sendHtml(res, 200, renderAdmin(user, locale)));
   if (url.pathname.startsWith('/page/')) {
     if (!isPluginEnabled('cms')) return sendHtml(res, 404, renderFeatureHub({ user, locale, notice: 'The CMS feature is currently disabled.' }));
@@ -331,6 +398,66 @@ function initializeDatabase() {
       expires_at INTEGER NOT NULL,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
+    CREATE TABLE IF NOT EXISTS api_keys (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      key_hash TEXT NOT NULL UNIQUE,
+      prefix TEXT NOT NULL,
+      owner_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      scopes_json TEXT NOT NULL DEFAULT '[]',
+      expires_at TEXT,
+      last_used_at TEXT,
+      is_revoked INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS api_key_usage (
+      api_key_id INTEGER NOT NULL REFERENCES api_keys(id) ON DELETE CASCADE,
+      window_start TEXT NOT NULL,
+      request_count INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (api_key_id, window_start)
+    );
+    CREATE TABLE IF NOT EXISTS developer_permissions (
+      permission_key TEXT NOT NULL,
+      role_name TEXT NOT NULL,
+      PRIMARY KEY (permission_key, role_name)
+    );
+    CREATE TABLE IF NOT EXISTS webhook_endpoints (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      url TEXT NOT NULL,
+      secret TEXT NOT NULL DEFAULT '',
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS webhook_subscriptions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      endpoint_id INTEGER NOT NULL REFERENCES webhook_endpoints(id) ON DELETE CASCADE,
+      event_name TEXT NOT NULL,
+      UNIQUE(endpoint_id, event_name)
+    );
+    CREATE TABLE IF NOT EXISTS webhook_deliveries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      endpoint_id INTEGER NOT NULL REFERENCES webhook_endpoints(id) ON DELETE CASCADE,
+      event_name TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      response_status_code INTEGER,
+      response_body TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'pending',
+      attempt_count INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      last_attempt_at TEXT,
+      next_attempt_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS webhook_permissions (
+      permission_key TEXT NOT NULL,
+      role_name TEXT NOT NULL,
+      PRIMARY KEY (permission_key, role_name)
+    );
+    CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_status_next ON webhook_deliveries(status, next_attempt_at);
+    CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_endpoint ON webhook_deliveries(endpoint_id, created_at DESC);
     CREATE TABLE IF NOT EXISTS oauth_states (
       state TEXT PRIMARY KEY,
       verifier TEXT NOT NULL,
@@ -375,6 +502,9 @@ function initializeDatabase() {
 
   ensureColumn('roles', 'color', "TEXT NOT NULL DEFAULT '#5d6b82'");
   ensureColumn('users', 'language', 'TEXT');
+  seedDeveloperPermissions();
+  seedWebhookPermissions();
+  startWebhookWorker();
   initializePlugins();
 
   seedFactoryData();
@@ -503,12 +633,19 @@ function resetDatabaseToFactoryDefaults() {
     db.exec(`
       DELETE FROM user_roles;
       DELETE FROM sessions;
+      DELETE FROM api_key_usage;
+      DELETE FROM api_keys;
+      DELETE FROM developer_permissions;
+      DELETE FROM webhook_deliveries;
+      DELETE FROM webhook_subscriptions;
+      DELETE FROM webhook_endpoints;
+      DELETE FROM webhook_permissions;
       DELETE FROM oauth_states;
       DELETE FROM users;
       DELETE FROM roles;
       DELETE FROM settings;
       DELETE FROM plugins;
-      DELETE FROM sqlite_sequence WHERE name IN ('users', 'roles');
+      DELETE FROM sqlite_sequence WHERE name IN ('users', 'roles', 'api_keys', 'webhook_deliveries', 'webhook_subscriptions', 'webhook_endpoints');
     `);
     resetPluginsToFactoryDefaults();
     seedFactoryData();
@@ -1002,6 +1139,10 @@ function isNavActive(currentHref, href) {
 function renderFeatureHub({ user, locale, notice = '' }) {
   const settings = getSettings();
   const activePlugins = listPlugins(locale).filter((plugin) => plugin.enabled);
+  const developerCard = hasDeveloperPermission(user, 'developer.view')
+    ? [{ href: '/developer', label: tf(locale, 'developer', 'Developer'), description: tf(locale, 'developerDashboardText', 'Create API keys for external integrations and revoke access when it is no longer needed.') }]
+    : [];
+  const featureCards = [...activePlugins, ...developerCard];
   const body = `
     <div class="app-shell">
       ${renderTopbar(user, locale, '/')}
@@ -1016,10 +1157,10 @@ function renderFeatureHub({ user, locale, notice = '' }) {
             </div>
           </div>
           <div class="feature-card-grid">
-            ${activePlugins.map((plugin) => `
-              <a class="feature-card" href="${escapeHtml(plugin.href)}">
-                <span class="feature-card-label">${escapeHtml(plugin.label)}</span>
-                <strong>${escapeHtml(plugin.description)}</strong>
+            ${featureCards.map((feature) => `
+              <a class="feature-card" href="${escapeHtml(feature.href)}">
+                <span class="feature-card-label">${escapeHtml(feature.label)}</span>
+                <strong>${escapeHtml(feature.description)}</strong>
               </a>
             `).join('')}
           </div>
@@ -1470,19 +1611,123 @@ function renderAdmin(user, locale) {
   return renderShell({ title: t(locale, 'admin'), body, admin: true, settings, locale });
 }
 
+function renderDeveloperPage(user, locale, { adminMode = false } = {}) {
+  const settings = getSettings();
+  const title = adminMode ? tf(locale, 'developerAdmin', 'Developer administration') : tf(locale, 'developerDashboard', 'Developer dashboard');
+  const body = `
+    <div class="app-shell developer-page">
+      ${renderTopbar(user, locale, adminMode ? '/admin/developer' : '/developer')}
+      <main class="admin-page developer-workspace" data-developer-page data-admin-mode="${adminMode ? 'true' : 'false'}">
+        <div class="admin-header">
+          <div>
+            <p class="eyebrow">${tf(locale, 'developer', 'Developer')}</p>
+            <h1>${escapeHtml(title)}</h1>
+            <p class="hint">${tf(locale, 'developerDashboardText', 'Create API keys for external integrations and revoke access when it is no longer needed.')}</p>
+          </div>
+          <div class="panel-head-actions">
+            ${adminMode ? `<a class="button ghost" href="/admin">${tf(locale, 'adminPortal', 'Atlas Admin')}</a>` : ''}
+            <button class="button primary" type="button" data-create-api-key>${tf(locale, 'createApiKey', 'Create API key')}</button>
+          </div>
+        </div>
+        ${adminMode ? renderAdminTabsNav(locale, { mode: 'links', activeTab: 'developer' }) : ''}
+        <div id="developerError" class="notice admin-error" hidden></div>
+        <section class="developer-grid">
+          <div class="panel developer-panel">
+            <div class="panel-head">
+              <div>
+                <h2>${tf(locale, 'apiKeys', 'API keys')}</h2>
+                <p class="hint">${tf(locale, 'apiKeysHint', 'Keys are shown by prefix only after creation.')}</p>
+              </div>
+              <button class="button" type="button" data-refresh-api-keys>${tf(locale, 'reloadMarkdown', 'Reload')}</button>
+            </div>
+            <div id="apiKeysTable" class="table-wrap"></div>
+          </div>
+          <aside class="panel developer-panel">
+            <div class="panel-head"><h2>${tf(locale, 'availableScopes', 'Available scopes')}</h2></div>
+            <div id="apiScopesList" class="developer-scope-list"></div>
+          </aside>
+        </section>
+      </main>
+      ${renderFooter(settings)}
+    </div>
+  `;
+  return renderShell({ title, body, settings, locale, scripts: ['developer.js'] });
+}
+
+function renderWebhooksAdminPage(user, locale) {
+  const settings = getSettings();
+  const body = `
+    <div class="app-shell webhooks-admin-page" data-webhooks-admin-page data-css-href="${assetUrl('webhooks.css')}">
+      ${renderTopbar(user, locale, '/admin/webhooks')}
+      <main class="admin-page">
+        <div class="admin-header">
+          <div>
+            <p class="eyebrow">${tf(locale, 'webhooks', 'Webhooks')}</p>
+            <h1>${tf(locale, 'webhooks', 'Webhooks')}</h1>
+            <p class="hint">${tf(locale, 'webhooksDescription', 'Outgoing webhooks for Atlas system and plugin events.')}</p>
+          </div>
+          <div class="row-actions"><a class="button ghost" href="/admin">${tf(locale, 'admin', 'Admin')}</a></div>
+        </div>
+        ${renderAdminTabsNav(locale, { mode: 'links', activeTab: 'webhooks' })}
+        <section class="webhooks-admin-grid">
+          <div class="panel">
+            <div class="panel-head"><h2>${tf(locale, 'webhookEndpoints', 'Webhook endpoints')}</h2><button class="button primary" type="button" data-new-webhook>${tf(locale, 'newEndpoint', 'New endpoint')}</button></div>
+            <div id="webhookEndpointList" class="webhook-endpoint-list"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h2>${tf(locale, 'endpointDetails', 'Endpoint details')}</h2><div class="row-actions"><button class="button ghost" type="button" data-edit-webhook hidden>${tf(locale, 'edit', 'Edit')}</button><button class="button danger" type="button" data-delete-webhook hidden>${tf(locale, 'delete', 'Delete')}</button></div></div>
+            <div id="webhookEndpointDetail" class="webhook-detail"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h2>${tf(locale, 'deliveryLogs', 'Delivery logs')}</h2><button class="button ghost" type="button" data-refresh-deliveries>${tf(locale, 'refresh', 'Refresh')}</button></div>
+            <div id="webhookDeliveries" class="webhook-deliveries"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h2>${tf(locale, 'permissions', 'Permissions')}</h2><button class="button primary" type="button" data-save-webhook-permissions>${tf(locale, 'savePermissions', 'Save permissions')}</button></div>
+            <div id="webhookPermissions"></div>
+          </div>
+        </section>
+      </main>
+      ${renderWebhookEndpointDialog(locale)}
+      ${renderFooter(settings)}
+    </div>
+  `;
+  return renderShell({ title: tf(locale, 'webhooks', 'Webhooks'), body, settings, locale, scripts: ['webhooks.js'] });
+}
+
+function renderWebhookEndpointDialog(locale) {
+  return `
+    <dialog id="webhookEndpointDialog" class="modal-dialog webhook-dialog">
+      <form id="webhookEndpointForm" class="modal-form">
+        <div class="qa-dialog-head"><div><p class="eyebrow">${tf(locale, 'webhooks', 'Webhooks')}</p><h2>${tf(locale, 'editEndpoint', 'Edit endpoint')}</h2></div><button class="button ghost" type="button" data-close-webhook-dialog>${tf(locale, 'close', 'Close')}</button></div>
+        <input name="id" type="hidden">
+        <label>${tf(locale, 'name', 'Name')}<input name="name" required></label>
+        <label>${tf(locale, 'url', 'URL')}<input name="url" type="url" required placeholder="https://example.com/webhook"></label>
+        <label>${tf(locale, 'secret', 'Secret')}<input name="secret" autocomplete="off" placeholder="${tf(locale, 'keepSecretHint', 'Leave empty to keep existing secret')}"></label>
+        <label class="check"><input name="is_active" type="checkbox" checked><span>${tf(locale, 'active', 'Active')}</span></label>
+        <section><h3>${tf(locale, 'events', 'Events')}</h3><div id="webhookEventPicker" class="permission-grid compact"></div></section>
+        <section><h3>${tf(locale, 'payloadPreview', 'Payload preview')}</h3><select id="webhookPreviewEvent"></select><pre id="webhookPayloadPreview" class="webhook-payload-preview"></pre></section>
+        <div class="modal-actions"><button class="button primary" type="submit">${tf(locale, 'save', 'Save')}</button></div>
+      </form>
+    </dialog>
+  `;
+}
+
 function renderAdminTabsNav(locale, { mode = 'buttons', activeTab = '', activePluginKey = '' } = {}) {
   const pluginAdminPages = loadedPlugins.filter((plugin) => plugin.adminPage);
   const items = [
     { key: 'content', label: tf(locale, 'pages', 'Pages') },
     { key: 'navigation', label: tf(locale, 'navigationEditor', 'Navigation') },
     { key: 'plugins', label: tf(locale, 'plugins', 'Plugins') },
+    { key: 'developer', label: tf(locale, 'developer', 'Developer'), href: '/admin/developer' },
+    { key: 'webhooks', label: tf(locale, 'webhooks', 'Webhooks'), href: '/admin/webhooks' },
     { key: 'access', label: tf(locale, 'accessManagement', 'Access') },
     { key: 'instance', label: tf(locale, 'instanceSettings', 'Instance') }
   ];
   const renderItem = (item) => {
     const activeClass = item.key === activeTab ? ' active' : '';
-    if (mode === 'links') {
-      return `<a class="admin-tab-button${activeClass}" href="/admin?tab=${escapeAttribute(item.key)}">${escapeHtml(item.label)}</a>`;
+    if (mode === 'links' || item.href) {
+      return `<a class="admin-tab-button${activeClass}" href="${escapeHtml(item.href || `/admin?tab=${escapeAttribute(item.key)}`)}">${escapeHtml(item.label)}</a>`;
     }
     return `<button class="admin-tab-button${activeClass}" type="button" data-admin-tab="${escapeAttribute(item.key)}">${escapeHtml(item.label)}</button>`;
   };
@@ -1577,9 +1822,24 @@ function renderShell({ title, body, admin = false, settings = getSettings(), loc
   const cssUrl = assetUrl('app.css');
   const appJsUrl = assetUrl('app.js');
   const adminScript = admin ? inlineScriptTag('admin.js') : '';
+  const globalPluginKeys = loadedPlugins
+    .filter((plugin) => plugin.globalAssets && isPluginEnabled(plugin.key))
+    .map((plugin) => plugin.key);
+  const globalStyles = loadedPlugins
+    .filter((plugin) => plugin.globalAssets && isPluginEnabled(plugin.key))
+    .flatMap((plugin) => (plugin.globalAssets.styles || []).map((file) => pluginAssetUrl(plugin.key, file)))
+    .map((href) => `<link rel="stylesheet" href="${href}">`)
+    .join('');
+  const globalScripts = loadedPlugins
+    .filter((plugin) => plugin.globalAssets && isPluginEnabled(plugin.key))
+    .flatMap((plugin) => (plugin.globalAssets.scripts || []).map((file) => pluginAssetUrl(plugin.key, file)))
+    .filter((src) => !scripts.includes(src))
+    .map((src) => `<script defer src="${src}"></script>`)
+    .join('');
   const extraScripts = scripts
     .map((file) => `<script defer src="${String(file).startsWith('/') ? file : assetUrl(file)}"></script>`)
     .join('');
+  const i18nPluginKeys = Array.from(new Set([...(Array.isArray(pluginKeys) ? pluginKeys : []), ...globalPluginKeys]));
   return `<!doctype html>
     <html lang="${escapeHtml(locale)}" style="--primary-light: ${lightThemeColor}; --primary-dark-mode: ${darkThemeColor}; --bg-light-base: ${lightBgColor}; --bg-dark-base: ${darkBgColor}; --bg-light-glow: ${lightBgGlow}; --bg-dark-glow: ${darkBgGlow}; --surface-light-base: ${lightUiColor}; --surface-dark-base: ${darkUiColor}; --surface-light: ${lightUiSurface}; --surface-light-strong: ${lightUiStrong}; --surface-light-soft: ${lightUiSoft}; --surface-light-elevated: ${lightUiElevated}; --surface-dark: ${darkUiSurface}; --surface-dark-strong: ${darkUiStrong}; --surface-dark-soft: ${darkUiSoft}; --surface-dark-elevated: ${darkUiElevated};">
       <head>
@@ -1587,8 +1847,10 @@ function renderShell({ title, body, admin = false, settings = getSettings(), loc
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>${escapeHtml(title)} · ${escapeHtml(settings.app_name)}</title>
         <link rel="stylesheet" href="${cssUrl}">
-        <script id="portal-i18n" type="application/json">${JSON.stringify(getClientI18n(locale, pluginKeys)).replace(/</g, '\\u003c')}</script>
+        ${globalStyles}
+        <script id="portal-i18n" type="application/json">${JSON.stringify(getClientI18n(locale, i18nPluginKeys)).replace(/</g, '\\u003c')}</script>
         <script defer src="${appJsUrl}"></script>
+        ${globalScripts}
         ${extraScripts}
         ${adminScript}
       </head>
@@ -1713,7 +1975,9 @@ async function handleUpsertUser(req, res) {
     isAdmin: Boolean(isAdmin),
     active: Boolean(active)
   });
-  sendJson(res, 200, { ok: true, user: listUsers().find((item) => item.id === userId) });
+  const savedUser = listUsers().find((item) => item.id === userId);
+  await emitPluginEvent(isUpdate ? 'user.updated' : 'user.created', { user: publicUser(savedUser) }, { source: { atlas: 'core' } });
+  sendJson(res, 200, { ok: true, user: savedUser });
 }
 
 function handleDeleteUser(res, pathname) {
@@ -1730,6 +1994,7 @@ async function handleUpsertRole(req, res) {
   const description = String(payload.description || '').trim();
   const color = sanitizeColor(payload.color || '#5d6b82');
   if (!name) return sendJson(res, 400, { error: 'Role name is required.' });
+  const isUpdate = Boolean(id);
   if (id) {
     const duplicate = db.prepare('SELECT id FROM roles WHERE name = ? AND id != ?').get(name, id);
     if (duplicate) return sendJson(res, 409, { error: 'This role already exists.' });
@@ -1738,7 +2003,10 @@ async function handleUpsertRole(req, res) {
     db.prepare('INSERT INTO roles (name, description, color) VALUES (?, ?, ?) ON CONFLICT(name) DO UPDATE SET description = excluded.description, color = excluded.color').run(name, description, color);
   }
   logInfo(`Role saved: ${name}`, { roleId: id || 'new', color });
-  sendJson(res, 200, { ok: true, roles: listRoles() });
+  const roles = listRoles();
+  const role = roles.find((item) => item.name === name);
+  await emitPluginEvent(isUpdate ? 'role.updated' : 'role.created', { role }, { source: { atlas: 'core' } });
+  sendJson(res, 200, { ok: true, roles });
 }
 
 function handleDeleteRole(res, pathname) {
@@ -2178,6 +2446,7 @@ async function handleUpdatePlugin(req, res, locale = DEFAULT_SETTINGS.default_la
   if (!FEATURE_DEFINITIONS[key]) return sendJson(res, 404, { error: 'Plugin not found.' });
   const enabled = payload.enabled === true;
   db.prepare('INSERT INTO plugins (key, enabled) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET enabled = excluded.enabled').run(key, enabled ? 1 : 0);
+  await emitPluginEvent(enabled ? 'plugin.enabled' : 'plugin.disabled', { key, enabled }, { source: { atlas: 'core' } });
   sendJson(res, 200, { ok: true, plugins: listPlugins(locale) });
 }
 
@@ -2375,6 +2644,11 @@ function parseJsonObject(value, fallback) {
   } catch {
     return fallback;
   }
+}
+
+function parseJsonArray(value, fallback = []) {
+  const parsed = parseJsonObject(value, fallback);
+  return Array.isArray(parsed) ? parsed : fallback;
 }
 
 function normalizeFormRecord(row) {
@@ -3306,6 +3580,8 @@ function normalizeUserRoles(roleNames, isAdmin) {
 }
 
 function getCurrentUser(req) {
+  const apiKeyUser = getCurrentUserFromApiKey(req);
+  if (apiKeyUser) return apiKeyUser;
   const token = getCookie(req, COOKIE_NAME);
   if (!token) return null;
   const session = db.prepare('SELECT * FROM sessions WHERE token_hash = ? AND expires_at > ?').get(hashToken(token), Date.now());
@@ -3319,6 +3595,70 @@ function getCurrentUser(req) {
     WHERE ur.user_id = ?
   `).all(user.id).map((role) => role.name);
   return user;
+}
+
+function getCurrentUserFromApiKey(req) {
+  const key = getBearerToken(req);
+  if (!key) return null;
+  const row = db.prepare('SELECT * FROM api_keys WHERE key_hash = ?').get(hashToken(key));
+  if (!row || row.is_revoked) return null;
+  if (row.expires_at && new Date(row.expires_at).getTime() <= Date.now()) return null;
+  const user = getCurrentUserFromId(row.owner_user_id);
+  if (!user) return null;
+  const now = new Date().toISOString();
+  const windowStart = `${now.slice(0, 13)}:00:00.000Z`;
+  db.prepare('UPDATE api_keys SET last_used_at = ? WHERE id = ?').run(now, row.id);
+  db.prepare(`
+    INSERT INTO api_key_usage (api_key_id, window_start, request_count, updated_at)
+    VALUES (?, ?, 1, CURRENT_TIMESTAMP)
+    ON CONFLICT(api_key_id, window_start) DO UPDATE SET
+      request_count = request_count + 1,
+      updated_at = CURRENT_TIMESTAMP
+  `).run(row.id, windowStart);
+  user.auth_type = 'api_key';
+  user.api_key_id = row.id;
+  user.api_key_prefix = row.prefix;
+  user.api_key_scopes = parseJsonArray(row.scopes_json);
+  return user;
+}
+
+function hasBearerToken(req) {
+  return Boolean(getBearerToken(req));
+}
+
+function getBearerToken(req) {
+  const header = String(req.headers.authorization || '').trim();
+  const match = /^Bearer\s+(.+)$/i.exec(header);
+  return match ? match[1].trim() : '';
+}
+
+function requireApiKeyScopeForRequest(user, url, method, res) {
+  if (user?.auth_type !== 'api_key') return true;
+  const requiredScope = requiredScopeForApiRequest(url.pathname, method);
+  if (!requiredScope) return true;
+  if ((user.api_key_scopes || []).includes(requiredScope)) return true;
+  sendJson(res, 403, { error: `API key scope required: ${requiredScope}` });
+  return false;
+}
+
+function requiredScopeForApiRequest(pathname, method) {
+  const write = !['GET', 'HEAD', 'OPTIONS'].includes(String(method || 'GET').toUpperCase());
+  if (pathname === '/api/login' || pathname === '/api/logout') return null;
+  if (pathname.startsWith('/api/admin/')) return write ? 'admin.write' : 'admin.read';
+  if (pathname === '/api/plugins' || pathname.startsWith('/api/plugins/')) return write ? 'plugins.write' : 'plugins.read';
+  if (isCoreApiPath(pathname)) return write ? 'atlas.write' : 'atlas.read';
+  return write ? 'plugins.write' : 'plugins.read';
+}
+
+function isCoreApiPath(pathname) {
+  return [
+    '/api/me',
+    '/api/profile',
+    '/api/developer/',
+    '/api/cms/',
+    '/api/forms/',
+    '/api/admin/'
+  ].some((prefix) => pathname === prefix.slice(0, -1) || pathname.startsWith(prefix));
 }
 
 function getCurrentUserFromId(id) {
@@ -3357,6 +3697,433 @@ function requireAdmin(user, res, callback) {
 function requireCmsEditor(user, res, callback) {
   if (!canManageCms(user)) return sendJson(res, 403, { error: 'CMS editor permissions required.' });
   return callback();
+}
+
+function requireDeveloperPermission(user, res, key, callback) {
+  if (!hasDeveloperPermission(user, key)) return sendJson(res, 403, { error: 'Developer permissions required.' });
+  return callback();
+}
+
+function hasDeveloperPermission(user, key) {
+  if (user?.is_admin) return true;
+  return Boolean(user?.roles?.some((role) => db.prepare('SELECT 1 FROM developer_permissions WHERE permission_key = ? AND role_name = ?').get(key, role)));
+}
+
+function seedDeveloperPermissions() {
+  for (const key of DEVELOPER_PERMISSION_KEYS) {
+    db.prepare('INSERT OR IGNORE INTO developer_permissions (permission_key, role_name) VALUES (?, ?)').run(key, 'Admins');
+  }
+  for (const key of ['developer.view', 'developer.create_api_key']) {
+    db.prepare('INSERT OR IGNORE INTO developer_permissions (permission_key, role_name) VALUES (?, ?)').run(key, 'Users');
+  }
+}
+
+function developerPermissionPayload(user) {
+  return Object.fromEntries(DEVELOPER_PERMISSION_KEYS.map((key) => [key.replace('developer.', ''), hasDeveloperPermission(user, key)]));
+}
+
+function getApiScopeCatalog() {
+  return API_KEY_SCOPES.map(([key, description]) => ({ key, description }));
+}
+
+function normalizeApiScopes(value) {
+  const allowed = new Set(API_KEY_SCOPES.map(([key]) => key));
+  return Array.from(new Set((Array.isArray(value) ? value : [])
+    .map((scope) => String(scope || '').trim())
+    .filter((scope) => allowed.has(scope))));
+}
+
+function normalizeApiKeyExpiry(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString();
+}
+
+function listApiKeysForUser(user) {
+  return listApiKeys({ ownerUserId: user.id, all: hasDeveloperPermission(user, 'developer.manage_all_keys') && user.auth_type !== 'api_key' });
+}
+
+function listApiKeys({ ownerUserId = 0, all = false } = {}) {
+  const rows = all
+    ? db.prepare(`
+        SELECT k.*, u.name AS owner_name, u.email AS owner_email
+        FROM api_keys k
+        LEFT JOIN users u ON u.id = k.owner_user_id
+        ORDER BY k.created_at DESC, k.id DESC
+      `).all()
+    : db.prepare(`
+        SELECT k.*, u.name AS owner_name, u.email AS owner_email
+        FROM api_keys k
+        LEFT JOIN users u ON u.id = k.owner_user_id
+        WHERE k.owner_user_id = ?
+        ORDER BY k.created_at DESC, k.id DESC
+      `).all(ownerUserId);
+  return rows.map(serializeApiKey);
+}
+
+function serializeApiKey(row) {
+  const usage = db.prepare('SELECT SUM(request_count) AS total FROM api_key_usage WHERE api_key_id = ?').get(row.id);
+  return {
+    id: row.id,
+    name: row.name,
+    prefix: row.prefix,
+    ownerUserId: row.owner_user_id,
+    ownerName: row.owner_name || '',
+    ownerEmail: row.owner_email || '',
+    scopes: parseJsonArray(row.scopes_json),
+    expiresAt: row.expires_at || '',
+    lastUsedAt: row.last_used_at || '',
+    isRevoked: Boolean(row.is_revoked),
+    createdAt: row.created_at,
+    usageCount: Number(usage?.total || 0)
+  };
+}
+
+async function handleCreateApiKey(req, res, user) {
+  const payload = await readJson(req);
+  const name = String(payload.name || '').trim();
+  if (!name) return sendJson(res, 400, { error: 'API key name is required.' });
+  const canManageAll = hasDeveloperPermission(user, 'developer.manage_all_keys');
+  const ownerUserId = canManageAll && Number(payload.ownerUserId || payload.owner_user_id) ? Number(payload.ownerUserId || payload.owner_user_id) : user.id;
+  const owner = getCurrentUserFromId(ownerUserId);
+  if (!owner) return sendJson(res, 400, { error: 'Owner user not found.' });
+  const scopes = normalizeApiScopes(payload.scopes);
+  if (!scopes.length) return sendJson(res, 400, { error: 'At least one scope is required.' });
+  const expiresAt = normalizeApiKeyExpiry(payload.expiresAt || payload.expires_at);
+  const prefix = randomBytes(4).toString('hex');
+  const plainKey = `atlas_${prefix}_${randomBytes(32).toString('base64url')}`;
+  const result = db.prepare(`
+    INSERT INTO api_keys (name, key_hash, prefix, owner_user_id, scopes_json, expires_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(name, hashToken(plainKey), prefix, owner.id, JSON.stringify(scopes), expiresAt);
+  const created = db.prepare(`
+    SELECT k.*, u.name AS owner_name, u.email AS owner_email
+    FROM api_keys k
+    LEFT JOIN users u ON u.id = k.owner_user_id
+    WHERE k.id = ?
+  `).get(result.lastInsertRowid);
+  sendJson(res, 200, { ok: true, apiKey: serializeApiKey(created), plainKey });
+}
+
+function handleRevokeApiKey(res, pathname, user, adminMode) {
+  const match = /\/api\/(?:admin\/)?developer\/api-keys\/(\d+)\/revoke$/.exec(pathname);
+  const id = Number(match?.[1] || 0);
+  if (!id) return sendJson(res, 400, { error: 'API key not found.' });
+  const row = db.prepare('SELECT * FROM api_keys WHERE id = ?').get(id);
+  if (!row) return sendJson(res, 404, { error: 'API key not found.' });
+  if (!adminMode && row.owner_user_id !== user.id && !hasDeveloperPermission(user, 'developer.manage_all_keys')) {
+    return sendJson(res, 403, { error: 'Developer permissions required.' });
+  }
+  db.prepare('UPDATE api_keys SET is_revoked = 1 WHERE id = ?').run(id);
+  sendJson(res, 200, { ok: true });
+}
+
+function requireWebhookPermission(user, res, key, callback) {
+  if (!hasWebhookPermission(user, key)) return sendJson(res, 403, { error: tf(user?.language || DEFAULT_SETTINGS.default_language, 'webhooksPermissionRequired', 'Webhook permissions required.') });
+  return callback();
+}
+
+function hasWebhookPermission(user, key) {
+  if (user?.is_admin) return true;
+  return Boolean(user?.roles?.some((role) => db.prepare('SELECT 1 FROM webhook_permissions WHERE permission_key = ? AND role_name = ?').get(key, role)));
+}
+
+function seedWebhookPermissions() {
+  for (const key of WEBHOOK_PERMISSION_KEYS) {
+    db.prepare('INSERT OR IGNORE INTO webhook_permissions (permission_key, role_name) VALUES (?, ?)').run(key, 'Admins');
+  }
+}
+
+function startWebhookWorker() {
+  if (webhookWorker) return;
+  webhookWorker = setInterval(() => processDueWebhookDeliveries(), 60_000);
+}
+
+function sendWebhookSupport(res, user) {
+  sendJson(res, 200, {
+    eventCatalog: WEBHOOK_EVENT_CATALOG,
+    permissions: getWebhookPermissionMatrix(),
+    permissionKeys: WEBHOOK_PERMISSION_KEYS,
+    roles: listRoles(),
+    can: getWebhookCapabilities(user)
+  });
+}
+
+function sendWebhookEndpoints(res, user) {
+  sendJson(res, 200, { items: listWebhookEndpoints({ includeSecret: false }), can: getWebhookCapabilities(user) });
+}
+
+async function handleSaveWebhookEndpoint(req, res, user) {
+  const payload = await readJson(req);
+  const id = Number(payload.id || 0);
+  const existing = id ? getWebhookEndpoint(id, { includeSecret: true }) : null;
+  if (id && !existing) return sendJson(res, 404, { error: 'Endpoint not found.' });
+  if (!existing && !hasWebhookPermission(user, 'webhooks.create')) return sendJson(res, 403, { error: 'Create permissions required.' });
+  if (existing && !hasWebhookPermission(user, 'webhooks.edit')) return sendJson(res, 403, { error: 'Edit permissions required.' });
+  const name = String(payload.name || '').trim();
+  const endpointUrl = String(payload.url || '').trim();
+  if (!name || !isHttpUrl(endpointUrl)) return sendJson(res, 400, { error: 'Name and a valid HTTP URL are required.' });
+  const secret = Object.hasOwn(payload, 'secret') && String(payload.secret || '') ? String(payload.secret || '') : existing?.secret || '';
+  const events = normalizeWebhookEventList(payload.events);
+  db.exec('BEGIN');
+  try {
+    let endpointId = id;
+    if (existing) {
+      db.prepare('UPDATE webhook_endpoints SET name = ?, url = ?, secret = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(name, endpointUrl, secret, payload.isActive || payload.is_active ? 1 : 0, id);
+    } else {
+      const result = db.prepare('INSERT INTO webhook_endpoints (name, url, secret, is_active, created_by_user_id, updated_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)').run(name, endpointUrl, secret, payload.isActive === false || payload.is_active === false ? 0 : 1, user.id);
+      endpointId = Number(result.lastInsertRowid);
+    }
+    db.prepare('DELETE FROM webhook_subscriptions WHERE endpoint_id = ?').run(endpointId);
+    for (const eventName of events) db.prepare('INSERT OR IGNORE INTO webhook_subscriptions (endpoint_id, event_name) VALUES (?, ?)').run(endpointId, eventName);
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+  sendJson(res, 200, { ok: true, items: listWebhookEndpoints({ includeSecret: false }) });
+}
+
+function handleDeleteWebhookEndpoint(res, pathname) {
+  const id = Number(decodeURIComponent(pathname.slice('/api/admin/webhooks/endpoints/'.length)));
+  db.prepare('DELETE FROM webhook_endpoints WHERE id = ?').run(id);
+  sendJson(res, 200, { ok: true });
+}
+
+async function handleSendWebhookTest(req, res) {
+  const payload = await readJson(req);
+  const endpoint = getWebhookEndpoint(payload.endpointId || payload.endpoint_id, { includeSecret: true });
+  if (!endpoint) return sendJson(res, 404, { error: 'Endpoint not found.' });
+  const eventName = WEBHOOK_EVENT_CATALOG.includes(payload.eventName) ? payload.eventName : 'webhook.test';
+  const deliveryId = createWebhookDelivery(endpoint, eventName, buildWebhookEnvelope(eventName, { message: 'Atlas webhook test event', endpointId: endpoint.id }, { source: { atlas: 'core' } }));
+  await attemptWebhookDelivery(deliveryId);
+  sendJson(res, 200, { ok: true, delivery: getWebhookDelivery(deliveryId) });
+}
+
+function sendWebhookDeliveries(res, url) {
+  const endpointId = Number(url.searchParams.get('endpointId') || url.searchParams.get('endpoint_id') || 0);
+  const rows = db.prepare(`
+    SELECT d.*, e.name AS endpoint_name, e.url AS endpoint_url
+    FROM webhook_deliveries d
+    LEFT JOIN webhook_endpoints e ON e.id = d.endpoint_id
+    WHERE (? = 0 OR d.endpoint_id = ?)
+    ORDER BY d.created_at DESC, d.id DESC
+    LIMIT 100
+  `).all(endpointId, endpointId).map(normalizeWebhookDeliveryRow);
+  sendJson(res, 200, { items: rows });
+}
+
+async function handleRetryWebhookDelivery(res, pathname) {
+  const id = Number(decodeURIComponent(pathname.split('/')[5] || 0));
+  const delivery = getWebhookDelivery(id);
+  if (!delivery) return sendJson(res, 404, { error: 'Delivery not found.' });
+  db.prepare('UPDATE webhook_deliveries SET status = ?, next_attempt_at = NULL WHERE id = ?').run('pending', id);
+  await attemptWebhookDelivery(id);
+  sendJson(res, 200, { ok: true, delivery: getWebhookDelivery(id) });
+}
+
+async function handleSaveWebhookPermissions(req, res) {
+  const payload = await readJson(req);
+  const permissions = payload.permissions && typeof payload.permissions === 'object' ? payload.permissions : {};
+  const validRoles = new Set(listRoles().map((role) => role.name));
+  db.exec('BEGIN');
+  try {
+    db.prepare('DELETE FROM webhook_permissions').run();
+    for (const key of WEBHOOK_PERMISSION_KEYS) {
+      for (const role of normalizeStringArray(permissions[key]).filter((role) => validRoles.has(role))) {
+        db.prepare('INSERT OR IGNORE INTO webhook_permissions (permission_key, role_name) VALUES (?, ?)').run(key, role);
+      }
+    }
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+  sendJson(res, 200, { ok: true, permissions: getWebhookPermissionMatrix() });
+}
+
+async function enqueueWebhookEvent(eventName, data, meta) {
+  if (!WEBHOOK_EVENT_CATALOG.includes(eventName)) return;
+  const endpoints = listWebhookEndpoints({ includeSecret: true }).filter((endpoint) => endpoint.isActive && endpoint.events.includes(eventName));
+  for (const endpoint of endpoints) {
+    const deliveryId = createWebhookDelivery(endpoint, eventName, buildWebhookEnvelope(eventName, data, meta));
+    setTimeout(() => attemptWebhookDelivery(deliveryId), 0);
+  }
+}
+
+function buildWebhookEnvelope(eventName, data, meta = {}) {
+  return {
+    id: randomUUID(),
+    event: eventName,
+    createdAt: new Date().toISOString(),
+    source: { atlas: 'core', ...(meta.source || {}) },
+    data: data || {}
+  };
+}
+
+function createWebhookDelivery(endpoint, eventName, envelope) {
+  const result = db.prepare('INSERT INTO webhook_deliveries (endpoint_id, event_name, payload_json, status) VALUES (?, ?, ?, ?)').run(endpoint.id, eventName, JSON.stringify(envelope), 'pending');
+  return Number(result.lastInsertRowid);
+}
+
+async function processDueWebhookDeliveries() {
+  if (webhookProcessing) return;
+  webhookProcessing = true;
+  try {
+    const rows = db.prepare(`
+      SELECT id FROM webhook_deliveries
+      WHERE status IN ('pending', 'retrying') AND (next_attempt_at IS NULL OR next_attempt_at <= CURRENT_TIMESTAMP)
+      ORDER BY created_at ASC
+      LIMIT 20
+    `).all();
+    for (const row of rows) await attemptWebhookDelivery(row.id);
+  } finally {
+    webhookProcessing = false;
+  }
+}
+
+async function attemptWebhookDelivery(deliveryId) {
+  const delivery = getWebhookDelivery(deliveryId);
+  if (!delivery || delivery.status === 'delivered') return;
+  const endpoint = getWebhookEndpoint(delivery.endpointId, { includeSecret: true });
+  if (!endpoint || !endpoint.isActive) return;
+  const nextAttempt = Number(delivery.attemptCount || 0) + 1;
+  const rawPayload = delivery.payloadJson;
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const headers = {
+    'content-type': 'application/json',
+    'user-agent': 'Atlas-Webhooks/1.0',
+    'x-atlas-event': delivery.eventName,
+    'x-atlas-delivery': String(delivery.id),
+    'x-atlas-timestamp': timestamp
+  };
+  if (endpoint.secret) headers['x-atlas-signature'] = `sha256=${createHmac('sha256', endpoint.secret).update(`${timestamp}.${rawPayload}`).digest('hex')}`;
+  db.prepare('UPDATE webhook_deliveries SET status = ?, attempt_count = ?, last_attempt_at = CURRENT_TIMESTAMP WHERE id = ?').run('pending', nextAttempt, delivery.id);
+  try {
+    const response = await fetch(endpoint.url, { method: 'POST', headers, body: rawPayload, signal: AbortSignal.timeout(10_000) });
+    const body = truncateWebhookText(await response.text());
+    if (response.status >= 200 && response.status < 300) {
+      db.prepare('UPDATE webhook_deliveries SET status = ?, response_status_code = ?, response_body = ?, next_attempt_at = NULL WHERE id = ?').run('delivered', response.status, body, delivery.id);
+    } else {
+      scheduleWebhookRetry(delivery.id, nextAttempt, response.status, body);
+    }
+  } catch (error) {
+    scheduleWebhookRetry(delivery.id, nextAttempt, null, truncateWebhookText(error?.message || 'Delivery failed'));
+  }
+}
+
+function scheduleWebhookRetry(deliveryId, attemptCount, statusCode, responseBody) {
+  if (attemptCount >= 5) {
+    db.prepare('UPDATE webhook_deliveries SET status = ?, response_status_code = ?, response_body = ?, next_attempt_at = NULL WHERE id = ?').run('failed', statusCode, responseBody, deliveryId);
+    return;
+  }
+  const delay = WEBHOOK_BACKOFF_MS[Math.min(attemptCount - 1, WEBHOOK_BACKOFF_MS.length - 1)];
+  db.prepare('UPDATE webhook_deliveries SET status = ?, response_status_code = ?, response_body = ?, next_attempt_at = ? WHERE id = ?').run('retrying', statusCode, responseBody, new Date(Date.now() + delay).toISOString(), deliveryId);
+}
+
+function getWebhookPermissionMatrix() {
+  const matrix = Object.fromEntries(WEBHOOK_PERMISSION_KEYS.map((key) => [key, []]));
+  for (const row of db.prepare('SELECT permission_key, role_name FROM webhook_permissions ORDER BY permission_key, role_name').all()) {
+    if (!matrix[row.permission_key]) matrix[row.permission_key] = [];
+    matrix[row.permission_key].push(row.role_name);
+  }
+  return matrix;
+}
+
+function getWebhookCapabilities(user) {
+  return Object.fromEntries(WEBHOOK_PERMISSION_KEYS.map((key) => [key.replace('webhooks.', '').replace(/_([a-z])/g, (_, char) => char.toUpperCase()), hasWebhookPermission(user, key)]));
+}
+
+function listWebhookEndpoints(options = {}) {
+  return db.prepare(`
+    SELECT e.*, u.name AS creator_name, u.email AS creator_email
+    FROM webhook_endpoints e
+    LEFT JOIN users u ON u.id = e.created_by_user_id
+    ORDER BY e.created_at DESC, e.id DESC
+  `).all().map((row) => normalizeWebhookEndpointRow(row, options));
+}
+
+function getWebhookEndpoint(id, options = {}) {
+  const row = db.prepare(`
+    SELECT e.*, u.name AS creator_name, u.email AS creator_email
+    FROM webhook_endpoints e
+    LEFT JOIN users u ON u.id = e.created_by_user_id
+    WHERE e.id = ?
+  `).get(Number(id || 0));
+  return row ? normalizeWebhookEndpointRow(row, options) : null;
+}
+
+function normalizeWebhookEndpointRow(row, options = {}) {
+  const events = db.prepare('SELECT event_name FROM webhook_subscriptions WHERE endpoint_id = ? ORDER BY event_name').all(row.id).map((item) => item.event_name);
+  const lastDelivery = db.prepare('SELECT * FROM webhook_deliveries WHERE endpoint_id = ? ORDER BY created_at DESC, id DESC LIMIT 1').get(row.id);
+  return {
+    id: row.id,
+    name: row.name,
+    url: row.url,
+    secret: options.includeSecret ? row.secret || '' : undefined,
+    hasSecret: Boolean(row.secret),
+    isActive: Boolean(row.is_active),
+    createdByUserId: row.created_by_user_id,
+    creator: row.creator_email ? { id: row.created_by_user_id, name: row.creator_name || row.creator_email, email: row.creator_email } : null,
+    events,
+    lastDelivery: lastDelivery ? normalizeWebhookDeliveryRow(lastDelivery) : null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function getWebhookDelivery(id) {
+  const row = db.prepare(`
+    SELECT d.*, e.name AS endpoint_name, e.url AS endpoint_url
+    FROM webhook_deliveries d
+    LEFT JOIN webhook_endpoints e ON e.id = d.endpoint_id
+    WHERE d.id = ?
+  `).get(Number(id || 0));
+  return row ? normalizeWebhookDeliveryRow(row) : null;
+}
+
+function normalizeWebhookDeliveryRow(row) {
+  return {
+    id: row.id,
+    endpointId: row.endpoint_id,
+    endpointName: row.endpoint_name || '',
+    endpointUrl: row.endpoint_url || '',
+    eventName: row.event_name,
+    payloadJson: row.payload_json,
+    responseStatusCode: row.response_status_code,
+    responseBody: row.response_body || '',
+    status: WEBHOOK_DELIVERY_STATUSES.has(row.status) ? row.status : 'pending',
+    attemptCount: row.attempt_count || 0,
+    createdAt: row.created_at,
+    lastAttemptAt: row.last_attempt_at || '',
+    nextAttemptAt: row.next_attempt_at || ''
+  };
+}
+
+function normalizeWebhookEventList(value) {
+  const source = Array.isArray(value) ? value : String(value || '').split(/[,\n]/);
+  return Array.from(new Set(source.map((item) => String(item).trim()).filter((item) => WEBHOOK_EVENT_CATALOG.includes(item))));
+}
+
+function normalizeStringArray(value) {
+  const source = Array.isArray(value) ? value : String(value || '').split(/[,\n]/);
+  return Array.from(new Set(source.map((item) => String(item).trim()).filter(Boolean)));
+}
+
+function isHttpUrl(value) {
+  try {
+    const parsed = new URL(value);
+    return ['http:', 'https:'].includes(parsed.protocol);
+  } catch {
+    return false;
+  }
+}
+
+function truncateWebhookText(value) {
+  const text = String(value || '');
+  return text.length > WEBHOOK_RESPONSE_LIMIT ? text.slice(0, WEBHOOK_RESPONSE_LIMIT) : text;
 }
 
 function getCategoryDirFromPolicySlug(slug) {
@@ -3770,10 +4537,30 @@ function buildPluginContext(extra = {}) {
     logInfo,
     logWarn,
     logError,
+    emitPluginEvent,
     ensureColumn,
     ensureTrailingNewline,
     ...extra
   };
+}
+
+async function emitPluginEvent(eventName, data = {}, meta = {}) {
+  const event = {
+    eventName: String(eventName || '').trim(),
+    data: data && typeof data === 'object' ? data : {},
+    meta: meta && typeof meta === 'object' ? meta : {},
+    createdAt: new Date().toISOString()
+  };
+  if (!event.eventName) return;
+  await enqueueWebhookEvent(event.eventName, event.data, event.meta);
+  for (const plugin of loadedPlugins) {
+    if (!isPluginEnabled(plugin.key) || typeof plugin.handleEvent !== 'function') continue;
+    try {
+      await plugin.handleEvent(buildPluginContext({ plugin }), event);
+    } catch (error) {
+      logError(`Plugin event failed for ${plugin.key}`, error);
+    }
+  }
 }
 
 async function handlePluginRequest({ req, res, url, user, locale, settings }) {

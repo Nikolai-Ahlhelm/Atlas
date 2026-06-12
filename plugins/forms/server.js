@@ -614,6 +614,12 @@ export default function createFormsPlugin({ manifest, rootDir }) {
       INSERT INTO form_submissions (form_id, submitter_user_id, submitter_name, submitter_email, values_json, status, updated_at)
       VALUES (?, ?, ?, ?, ?, 'submitted', CURRENT_TIMESTAMP)
     `).run(form.id, context.user.id, context.user.name, context.user.email, JSON.stringify(values));
+    await context.emitPluginEvent('forms.submission.created', {
+      submissionId: Number(result.lastInsertRowid),
+      form: { id: form.id, slug: form.slug, title: form.title },
+      submitter: context.publicUser(context.user),
+      values
+    }, { source: { plugin: feature.key } });
     context.sendJson(context.res, 200, { ok: true, submissionId: result.lastInsertRowid });
   }
 

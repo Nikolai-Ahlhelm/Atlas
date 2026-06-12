@@ -362,7 +362,9 @@ export default function createForumPlugin({ manifest, rootDir }) {
       db.exec('ROLLBACK');
       throw error;
     }
-    context.sendJson(context.res, 200, { ok: true, thread: serializeThreadDetail(getThreadBySlug(slug), context.user) });
+    const saved = serializeThreadDetail(getThreadBySlug(slug), context.user);
+    await context.emitPluginEvent('forum.thread.created', saved, { source: { plugin: feature.key } });
+    context.sendJson(context.res, 200, { ok: true, thread: saved });
   }
 
   async function createPost(context) {

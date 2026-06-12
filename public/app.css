@@ -221,7 +221,7 @@ select {
 
 .top-link-menu {
   position: absolute;
-  top: calc(100% + 10px);
+  top: calc(100% + 18px);
   left: 0;
   z-index: 50;
   display: none;
@@ -229,7 +229,7 @@ select {
   padding: 10px;
   border: 1px solid var(--line);
   border-radius: 18px;
-  background: color-mix(in srgb, var(--surface-strong) 94%, var(--theme-tint));
+  background: color-mix(in srgb, var(--surface-strong) 96%, var(--theme-tint));
   box-shadow: var(--shadow-soft);
   backdrop-filter: blur(22px) saturate(145%);
 }
@@ -240,6 +240,8 @@ select {
   min-width: min(320px, calc(100vw - 42px));
   max-height: min(68vh, 560px);
   overflow: auto;
+  background-color: color-mix(in srgb, var(--surface-strong) 96%, var(--theme-tint));
+  opacity: 1;
 }
 
 .top-link-dropdown.open .top-link-menu {
@@ -5017,6 +5019,66 @@ body[data-default-theme="dark"] .inline-edit-cell .entry-picker-trigger:hover {
   justify-content: flex-end;
 }
 
+.developer-workspace {
+  width: min(100% - 24px, 1420px);
+}
+
+.developer-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(260px, 0.75fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.developer-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.developer-pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.developer-scope-list,
+.developer-scope-picker {
+  display: grid;
+  gap: 10px;
+}
+
+.developer-scope-card {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-elevated);
+}
+
+.developer-scope-card p,
+.developer-scope-picker small {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.developer-key-form fieldset {
+  display: grid;
+  gap: 10px;
+}
+
+.developer-key-once {
+  overflow: auto;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #111827;
+  color: #e5f0ff;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
 @media (max-width: 900px) {
   .directory-header,
   .directory-overview-band,
@@ -5036,11 +5098,13 @@ body[data-default-theme="dark"] .inline-edit-cell .entry-picker-trigger:hover {
   .directory-form-grid,
   .directory-admin-layout,
   .directory-field-editor,
-  .directory-profile-hero {
+  .directory-profile-hero,
+  .developer-grid {
     grid-template-columns: 1fr;
   }
 
-  .directory-workspace {
+  .directory-workspace,
+  .developer-workspace {
     width: min(100% - 20px, 1360px);
   }
 }

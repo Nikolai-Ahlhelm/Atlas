@@ -1,0 +1,6 @@
+{
+  "key": "qa",
+  "name": "Q&A",
+  "version": "0.1.0",
+  "description": "Structured questions and answers with tags, voting, accepted answers and moderation."
+}

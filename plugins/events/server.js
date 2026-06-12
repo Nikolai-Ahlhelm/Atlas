@@ -427,6 +427,7 @@ export default function createEventsPlugin({ manifest, rootDir }) {
     }
 
     const saved = getEventBySlug(normalized.slug);
+    if (!existing) await context.emitPluginEvent('events.event.created', serializeEvent(saved, context.user, { detail: true }), { source: { plugin: feature.key } });
     context.sendJson(context.res, 200, { ok: true, event: serializeEvent(saved, context.user, { detail: true }) });
   }
 

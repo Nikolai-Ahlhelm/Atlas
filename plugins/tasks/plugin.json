@@ -1,0 +1,6 @@
+{
+  "key": "tasks",
+  "name": "Tasks",
+  "version": "0.1.0",
+  "description": "Boards, Kanban columns and tasks with labels, comments, assignees and board-level permissions."
+}
