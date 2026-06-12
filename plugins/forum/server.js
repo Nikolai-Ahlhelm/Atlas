@@ -104,9 +104,16 @@ export default function createForumPlugin({ manifest, rootDir }) {
           role_name TEXT NOT NULL,
           PRIMARY KEY (permission_key, role_name)
         );
+        CREATE TABLE IF NOT EXISTS forum_thread_reads (
+          thread_id INTEGER NOT NULL REFERENCES forum_threads(id) ON DELETE CASCADE,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          last_read_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (thread_id, user_id)
+        );
         CREATE INDEX IF NOT EXISTS idx_forum_threads_category ON forum_threads(category_id, is_pinned DESC, updated_at DESC);
         CREATE INDEX IF NOT EXISTS idx_forum_posts_thread ON forum_posts(thread_id, created_at ASC);
         CREATE INDEX IF NOT EXISTS idx_forum_reports_status ON forum_reports(status, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_forum_thread_reads_user ON forum_thread_reads(user_id, last_read_at DESC);
       `);
       seedDefaultPermissions();
     },
@@ -114,6 +121,7 @@ export default function createForumPlugin({ manifest, rootDir }) {
       context.db.exec(`
         DELETE FROM forum_reports;
         DELETE FROM forum_reactions;
+        DELETE FROM forum_thread_reads;
         DELETE FROM forum_thread_tags;
         DELETE FROM forum_posts;
         DELETE FROM forum_threads;
@@ -202,7 +210,7 @@ export default function createForumPlugin({ manifest, rootDir }) {
     const slug = mode === 'category' ? decodeURIComponent(context.url.pathname.slice('/forum/category/'.length)) : mode === 'thread' ? decodeURIComponent(context.url.pathname.slice('/forum/thread/'.length)) : '';
     const copy = context.getPluginFeatureCopy(feature.key, context.locale, feature);
     const body = `
-      <div class="app-shell forum-page" data-forum-app data-forum-mode="${context.escapeAttribute(mode)}" data-forum-slug="${context.escapeAttribute(slug)}">
+      <div class="app-shell forum-page" data-forum-app data-forum-mode="${context.escapeAttribute(mode)}" data-forum-slug="${context.escapeAttribute(slug)}" data-css-href="${context.pluginAssetUrl(feature.key, 'forum.css')}">
         ${context.renderTopbar(context.user, context.locale, '/forum')}
         <main class="forum-workspace">
           <section class="forum-header">
@@ -241,7 +249,7 @@ export default function createForumPlugin({ manifest, rootDir }) {
     const settings = context.getSettings();
     const copy = context.getPluginFeatureCopy(feature.key, context.locale, feature);
     const body = `
-      <div class="app-shell" data-forum-admin-page>
+      <div class="app-shell" data-forum-admin-page data-css-href="${context.pluginAssetUrl(feature.key, 'forum.css')}">
         ${context.renderTopbar(context.user, context.locale, '/admin/forum')}
         <main class="admin-page forum-admin-page">
           <div class="admin-header">
@@ -341,6 +349,7 @@ export default function createForumPlugin({ manifest, rootDir }) {
     const thread = getThreadBySlug(context.url.searchParams.get('slug'));
     if (!thread || !canSeeCategory(context.user, thread.category)) return context.sendJson(context.res, 404, { error: 'Thread not found.' });
     db.prepare('UPDATE forum_threads SET view_count = view_count + 1 WHERE id = ?').run(thread.id);
+    markThreadRead(thread.id, context.user.id);
     context.sendJson(context.res, 200, serializeThreadDetail(getThreadById(thread.id), context.user));
   }
 
@@ -667,7 +676,33 @@ export default function createForumPlugin({ manifest, rootDir }) {
 
   function serializeThreadSummary(thread, user) {
     const replyCount = db.prepare('SELECT COUNT(*) AS count FROM forum_posts WHERE thread_id = ? AND is_deleted = 0').get(thread.id).count;
-    return { ...thread, content: '', replyCount, canModerate: hasPermission(user, 'forum.moderate') };
+    const lastPost = db.prepare(`
+      SELECT fp.id, fp.author_user_id, fp.content, fp.created_at, fp.updated_at, u.name, u.email
+      FROM forum_posts fp
+      LEFT JOIN users u ON u.id = fp.author_user_id
+      WHERE fp.thread_id = ? AND fp.is_deleted = 0
+      ORDER BY fp.created_at DESC
+      LIMIT 1
+    `).get(thread.id);
+    const lastAuthor = lastPost ? buildForumAuthor(lastPost.author_user_id, lastPost.name || lastPost.email || 'Unknown') : thread.author;
+    const lastActivityAt = lastPost?.created_at || thread.updatedAt;
+    return {
+      ...thread,
+      excerpt: excerpt(thread.content),
+      content: '',
+      replyCount,
+      postCount: replyCount + 1,
+      lastPost: lastPost ? {
+        id: lastPost.id,
+        author: lastAuthor,
+        createdAt: lastPost.created_at,
+        updatedAt: lastPost.updated_at,
+        excerpt: excerpt(lastPost.content)
+      } : null,
+      lastActivityAt,
+      hasUnread: hasUnreadThread(user, thread, lastActivityAt),
+      canModerate: hasPermission(user, 'forum.moderate')
+    };
   }
 
   function serializeThreadDetail(thread, user) {
@@ -745,6 +780,26 @@ export default function createForumPlugin({ manifest, rootDir }) {
   function getReactions(postId, userId) {
     const rows = db.prepare('SELECT type, user_id FROM forum_reactions WHERE post_id = ?').all(postId);
     return Array.from(REACTION_TYPES).map((type) => ({ type, count: rows.filter((row) => row.type === type).length, mine: rows.some((row) => row.type === type && row.user_id === userId) }));
+  }
+
+  function markThreadRead(threadId, userId) {
+    if (!userId) return;
+    db.prepare(`
+      INSERT INTO forum_thread_reads (thread_id, user_id, last_read_at)
+      VALUES (?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(thread_id, user_id) DO UPDATE SET last_read_at = CURRENT_TIMESTAMP
+    `).run(threadId, userId);
+  }
+
+  function hasUnreadThread(user, thread, lastActivityAt) {
+    if (!user?.id) return false;
+    if (thread.authorUserId === user.id && !db.prepare('SELECT 1 FROM forum_posts WHERE thread_id = ? AND author_user_id != ? AND is_deleted = 0 LIMIT 1').get(thread.id, user.id)) return false;
+    const read = db.prepare('SELECT last_read_at FROM forum_thread_reads WHERE thread_id = ? AND user_id = ?').get(thread.id, user.id);
+    return !read || new Date(lastActivityAt || thread.updatedAt).getTime() > new Date(read.last_read_at).getTime();
+  }
+
+  function excerpt(value = '') {
+    return String(value || '').replace(/\s+/g, ' ').trim().slice(0, 220);
   }
 
   function buildForumAuthor(userId, fallbackName) {
