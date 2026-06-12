@@ -94,6 +94,41 @@ export default function createEventsPlugin({ manifest, rootDir }) {
         DELETE FROM sqlite_sequence WHERE name IN ('events', 'event_participants', 'event_recurrences');
       `);
     },
+    seedInitialData(context) {
+      if (context.db.prepare('SELECT COUNT(*) AS count FROM events WHERE status != ?').get('deleted').count) return;
+      const adminId = getSeedAdminId(context);
+      const now = new Date();
+      const day = 24 * 60 * 60 * 1000;
+      const items = [
+        {
+          title: 'Policy Review Workshop',
+          slug: 'policy-review-workshop',
+          description: 'Example event for reviewing ownership, deadlines and open policy questions.',
+          location: 'Teams / Room Atlas',
+          start: new Date(now.getTime() + 7 * day),
+          end: new Date(now.getTime() + 7 * day + 90 * 60 * 1000),
+          maxParticipants: 12,
+          recurrence: 'none'
+        },
+        {
+          title: 'Monthly Security Office Hours',
+          slug: 'monthly-security-office-hours',
+          description: 'Recurring sample event for Q&A, incidents and access-control topics.',
+          location: 'Online',
+          start: new Date(now.getTime() + 14 * day),
+          end: new Date(now.getTime() + 14 * day + 60 * 60 * 1000),
+          maxParticipants: null,
+          recurrence: 'monthly'
+        }
+      ];
+      for (const item of items) {
+        const id = context.db.prepare(`
+          INSERT INTO events (title, slug, description, location, start_datetime, end_datetime, is_all_day, visibility, max_participants, roles_json, reminder_enabled, reminder_minutes_before, created_by_user_id, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 1, 30, ?, CURRENT_TIMESTAMP)
+        `).run(item.title, item.slug, item.description, item.location, item.start.toISOString(), item.end.toISOString(), 'public', item.maxParticipants, JSON.stringify([]), adminId).lastInsertRowid;
+        context.db.prepare('INSERT INTO event_recurrences (event_id, recurrence_type, interval, ends_at) VALUES (?, ?, ?, ?)').run(id, item.recurrence, 1, item.recurrence === 'monthly' ? new Date(now.getTime() + 180 * day).toISOString().slice(0, 10) : '');
+      }
+    },
     async handleRequest(context) {
       const { req, res, url, user, locale } = context;
 
@@ -496,6 +531,10 @@ export default function createEventsPlugin({ manifest, rootDir }) {
     for (const key of ['events.view', 'events.create', 'events.edit_own', 'events.rsvp', 'events.export']) {
       db.prepare('INSERT OR IGNORE INTO event_permissions (permission_key, role_name) VALUES (?, ?)').run(key, 'Users');
     }
+  }
+
+  function getSeedAdminId(context) {
+    return context.db.prepare('SELECT id FROM users WHERE is_admin = 1 ORDER BY id LIMIT 1').get()?.id || null;
   }
 
   function hasPermission(user, permissionKey) {

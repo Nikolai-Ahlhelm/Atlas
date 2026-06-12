@@ -1,8 +1,8 @@
 .announcement-global-banner {
   position: sticky;
-  top: 0;
-  z-index: 60;
-  padding: 10px clamp(14px, 3vw, 34px) 0;
+  top: 96px;
+  z-index: 35;
+  padding: 8px clamp(14px, 3vw, 34px) 0;
   pointer-events: none;
 }
 

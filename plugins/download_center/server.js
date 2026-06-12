@@ -59,6 +59,38 @@ export default function createDownloadCenterPlugin({ manifest, rootDir }) {
         DELETE FROM sqlite_sequence WHERE name IN ('download_files');
       `);
     },
+    seedInitialData(context) {
+      if (context.db.prepare('SELECT COUNT(*) AS count FROM download_files').get().count) return;
+      if (!context.existsSync(downloadsDir())) context.mkdirSync(downloadsDir(), { recursive: true });
+      const name = 'atlas-demo-security-brief.md';
+      const storageName = createStoredDownloadName(name);
+      const storagePath = getDownloadStoragePath(storageName);
+      const content = [
+        '# Atlas Security Brief',
+        '',
+        'This example download shows how files can be grouped, tagged and restricted by role.',
+        '',
+        '- Review the incident form before rollout.',
+        '- Keep policy owners visible in the directory.',
+        '- Use changelogs for release-impacting changes.'
+      ].join('\n');
+      context.writeFileSync(storagePath, context.ensureTrailingNewline(content), 'utf8');
+      const result = context.db.prepare(`
+        INSERT INTO download_files (name, relative_dir, storage_name, storage_path, description, tags_json, mime_type, encoding, file_size, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      `).run(
+        name,
+        'Security',
+        storageName,
+        storagePath,
+        'Demo brief for testing role-based downloads.',
+        JSON.stringify(['demo', 'security', 'onboarding']),
+        'text/markdown',
+        'text',
+        Buffer.byteLength(content, 'utf8')
+      );
+      setDownloadFileRoles(result.lastInsertRowid, ['Admins', 'Users']);
+    },
     async handleRequest(context) {
       const { req, res, url, user, locale } = context;
 

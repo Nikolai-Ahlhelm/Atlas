@@ -131,6 +131,43 @@ export default function createForumPlugin({ manifest, rootDir }) {
         DELETE FROM sqlite_sequence WHERE name IN ('forum_categories', 'forum_threads', 'forum_posts', 'forum_tags', 'forum_reactions', 'forum_reports');
       `);
     },
+    seedInitialData(context) {
+      if (context.db.prepare('SELECT COUNT(*) AS count FROM forum_categories').get().count) return;
+      const adminId = getSeedAdminId(context);
+      const categories = [
+        ['General Discussion', 'general-discussion', 'Open questions, ideas and workspace coordination.', 0],
+        ['Security & Compliance', 'security-compliance', 'Policy, audit and incident management discussions.', 1]
+      ].map(([name, slug, description, order]) => ({
+        name,
+        id: context.db.prepare(`
+          INSERT INTO forum_categories (name, slug, description, sort_order, is_private, roles_json, updated_at)
+          VALUES (?, ?, ?, ?, 0, ?, CURRENT_TIMESTAMP)
+        `).run(name, slug, description, order, JSON.stringify([])).lastInsertRowid
+      }));
+      const tags = [
+        ['Question', 'question', '#4f7cff'],
+        ['Policy', 'policy', '#16a34a'],
+        ['Solved', 'solved', '#f59e0b']
+      ].map(([name, slug, color]) => ({
+        name,
+        id: context.db.prepare('INSERT INTO forum_tags (name, slug, color) VALUES (?, ?, ?)').run(name, slug, color).lastInsertRowid
+      }));
+      const category = categories.find((item) => item.name === 'Security & Compliance') || categories[0];
+      const threadId = context.db.prepare(`
+        INSERT INTO forum_threads (category_id, author_user_id, title, slug, content, is_pinned, updated_at)
+        VALUES (?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
+      `).run(
+        category.id,
+        adminId,
+        'How do we prepare the first policy review?',
+        uniqueSlug(context, 'forum_threads', 'How do we prepare the first policy review?'),
+        'This example thread shows how teams can discuss policy ownership, review notes and next actions.',
+        ).lastInsertRowid;
+      for (const tag of tags) context.db.prepare('INSERT OR IGNORE INTO forum_thread_tags (thread_id, tag_id) VALUES (?, ?)').run(threadId, tag.id);
+      const firstPostId = context.db.prepare('INSERT INTO forum_posts (thread_id, author_user_id, content, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)').run(threadId, adminId, 'Start with the documentation pages, then create tasks for each owner and capture release-impacting changes in the changelog.').lastInsertRowid;
+      context.db.prepare('INSERT INTO forum_posts (thread_id, author_user_id, content, parent_post_id, updated_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)').run(threadId, adminId, 'Good default: use the sample task board as the review checklist and link back to the affected docs.', firstPostId);
+      context.db.prepare('UPDATE forum_threads SET is_solved = 1, solution_post_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(firstPostId, threadId);
+    },
     async handleRequest(context) {
       const { req, res, url, user, locale } = context;
 
@@ -559,6 +596,10 @@ export default function createForumPlugin({ manifest, rootDir }) {
     for (const key of ['forum.view', 'forum.create_thread', 'forum.reply', 'forum.edit_own_post', 'forum.delete_own_post', 'forum.mark_solution']) {
       db.prepare('INSERT OR IGNORE INTO forum_permissions (permission_key, role_name) VALUES (?, ?)').run(key, 'Users');
     }
+  }
+
+  function getSeedAdminId(context) {
+    return context.db.prepare('SELECT id FROM users WHERE is_admin = 1 ORDER BY id LIMIT 1').get()?.id || null;
   }
 
   function hasPermission(user, key) {

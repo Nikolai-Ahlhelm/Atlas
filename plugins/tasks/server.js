@@ -114,6 +114,46 @@ export default function createTasksPlugin({ manifest, rootDir }) {
         DELETE FROM sqlite_sequence WHERE name IN ('task_boards', 'task_columns', 'task_cards', 'task_comments', 'task_labels');
       `);
     },
+    seedInitialData(context) {
+      if (context.db.prepare('SELECT COUNT(*) AS count FROM task_boards').get().count) return;
+      const adminId = getSeedAdminId(context);
+      const boardId = context.db.prepare(`
+        INSERT INTO task_boards (name, description, owner_user_id, visibility, updated_at)
+        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+      `).run('Atlas Launch Board', 'Example board for planning policy, onboarding and review work.', adminId, 'public').lastInsertRowid;
+      createDefaultColumns(boardId);
+      const columns = context.db.prepare('SELECT id, name FROM task_columns WHERE board_id = ? ORDER BY sort_order').all(boardId);
+      const byName = new Map(columns.map((column) => [column.name, column.id]));
+      const labels = [
+        ['Policy', '#4f7cff'],
+        ['Review', '#16a34a'],
+        ['Blocked', '#dc2626']
+      ].map(([name, color]) => ({
+        name,
+        id: context.db.prepare('INSERT INTO task_labels (board_id, name, color) VALUES (?, ?, ?)').run(boardId, name, color).lastInsertRowid
+      }));
+      const cards = [
+        ['To do', 'Map active policies', 'Collect the policies that should appear in the documentation area.', 'todo', ['Policy']],
+        ['To do', 'Prepare incident form review', 'Check whether the demo incident form matches the internal workflow.', 'todo', ['Review']],
+        ['In progress', 'Invite department owners', 'Assign owners to profile and review tasks before rollout.', 'in_progress', ['Review']],
+        ['In progress', 'Validate access matrix', 'Confirm role visibility across plugins and navigation.', 'blocked', ['Blocked']],
+        ['Done', 'Create initial workspace tour', 'Seeded sample data now makes each plugin easier to inspect.', 'done', ['Policy']]
+      ];
+      for (const [index, card] of cards.entries()) {
+        const [columnName, title, description, status, labelNames] = card;
+        const columnId = byName.get(columnName) || columns[0]?.id;
+        if (!columnId) continue;
+        const cardId = context.db.prepare(`
+          INSERT INTO task_cards (board_id, column_id, title, description, assigned_user_id, sort_order, status, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        `).run(boardId, columnId, title, description, adminId, index, status).lastInsertRowid;
+        for (const labelName of labelNames) {
+          const label = labels.find((item) => item.name === labelName);
+          if (label) context.db.prepare('INSERT OR IGNORE INTO task_card_labels (task_card_id, label_id) VALUES (?, ?)').run(cardId, label.id);
+        }
+        if (index === 0 && adminId) context.db.prepare('INSERT INTO task_comments (task_card_id, author_user_id, content) VALUES (?, ?, ?)').run(cardId, adminId, 'Demo comment: use cards like this to coordinate implementation work.');
+      }
+    },
     async handleRequest(context) {
       const { req, res, url, user, locale } = context;
 
@@ -561,6 +601,10 @@ export default function createTasksPlugin({ manifest, rootDir }) {
     for (const key of ['tasks.view', 'tasks.create', 'tasks.edit', 'tasks.assign', 'tasks.comment']) {
       db.prepare('INSERT OR IGNORE INTO task_permissions (permission_key, role_name) VALUES (?, ?)').run(key, 'Users');
     }
+  }
+
+  function getSeedAdminId(context) {
+    return context.db.prepare('SELECT id FROM users WHERE is_admin = 1 ORDER BY id LIMIT 1').get()?.id || null;
   }
 
   function createDefaultColumns(boardId) {

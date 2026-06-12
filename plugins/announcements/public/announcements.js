@@ -43,7 +43,9 @@
           ${items.map(renderBannerItem).join('')}
         </div>
       `;
-      document.body.prepend(banner);
+      const topbar = document.querySelector('.topbar');
+      if (topbar) topbar.insertAdjacentElement('afterend', banner);
+      else document.body.prepend(banner);
       banner.querySelectorAll('[data-banner-ack]').forEach((button) => button.addEventListener('click', async () => {
         await acknowledge(Number(button.dataset.bannerAck));
         banner.remove();

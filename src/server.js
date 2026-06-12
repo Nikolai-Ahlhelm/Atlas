@@ -550,11 +550,29 @@ function seedFactoryData() {
   removeAdminFromDefaultMenuLinks();
   ensureFactoryAdminUser();
   ensureDefaultRoleCoverage();
+  seedEnabledPluginInitialData({ reason: 'factory' });
 }
 
 function ensureDefaultPlugins() {
   for (const feature of Object.values(FEATURE_DEFINITIONS)) {
     db.prepare('INSERT OR IGNORE INTO plugins (key, enabled) VALUES (?, ?)').run(feature.key, feature.defaultEnabled ? 1 : 0);
+  }
+}
+
+function seedEnabledPluginInitialData(options = {}) {
+  for (const plugin of loadedPlugins) {
+    if (!isPluginEnabled(plugin.key)) continue;
+    seedPluginInitialData(plugin, options);
+  }
+}
+
+function seedPluginInitialData(plugin, options = {}) {
+  if (!plugin || typeof plugin.seedInitialData !== 'function') return;
+  try {
+    plugin.seedInitialData(buildPluginContext({ plugin }), options);
+  } catch (error) {
+    logError(`Plugin initial data seeding failed for ${plugin.key}`, error);
+    throw error;
   }
 }
 
@@ -648,6 +666,7 @@ function resetDatabaseToFactoryDefaults() {
       DELETE FROM sqlite_sequence WHERE name IN ('users', 'roles', 'api_keys', 'webhook_deliveries', 'webhook_subscriptions', 'webhook_endpoints');
     `);
     resetPluginsToFactoryDefaults();
+    initializePlugins();
     seedFactoryData();
     db.exec('COMMIT');
     logInfo('Database reset completed');
@@ -2445,7 +2464,12 @@ async function handleUpdatePlugin(req, res, locale = DEFAULT_SETTINGS.default_la
   const key = String(payload.key || '').trim();
   if (!FEATURE_DEFINITIONS[key]) return sendJson(res, 404, { error: 'Plugin not found.' });
   const enabled = payload.enabled === true;
+  const wasEnabled = isPluginEnabled(key);
   db.prepare('INSERT INTO plugins (key, enabled) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET enabled = excluded.enabled').run(key, enabled ? 1 : 0);
+  if (enabled && !wasEnabled) {
+    const plugin = loadedPlugins.find((item) => item.key === key);
+    seedPluginInitialData(plugin, { reason: 'activation' });
+  }
   await emitPluginEvent(enabled ? 'plugin.enabled' : 'plugin.disabled', { key, enabled }, { source: { atlas: 'core' } });
   sendJson(res, 200, { ok: true, plugins: listPlugins(locale) });
 }

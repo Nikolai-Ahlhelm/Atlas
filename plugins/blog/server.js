@@ -18,6 +18,42 @@ export default function createBlogPlugin({ manifest, rootDir }) {
       href: '/admin/blog',
       label: manifest.name || 'Blog'
     },
+    seedInitialData(context) {
+      const blogDir = getBlogDir(context);
+      if (context.existsSync(blogDir) && readdirSync(blogDir).some((file) => file.endsWith('.md'))) return;
+      if (!context.existsSync(blogDir)) context.mkdirSync(blogDir, { recursive: true });
+      const posts = [
+        {
+          slug: 'welcome-to-atlas',
+          meta: {
+            title: 'Welcome to Atlas',
+            description: 'A sample story that shows the blog layout, metadata and Markdown rendering.',
+            excerpt: 'Use blog posts for internal updates, release context and team notes.',
+            author: 'Atlas Team',
+            publishedAt: '2026-06-12',
+            roles: []
+          },
+          markdown: '# Welcome to Atlas\n\nThis example post demonstrates the blog plugin with Markdown content, excerpts and publishing metadata.\n\n## What to try\n\nOpen the admin studio, edit this post, and publish a note that fits your own workspace.'
+        },
+        {
+          slug: 'policy-review-rhythm',
+          meta: {
+            title: 'Policy Review Rhythm',
+            description: 'How teams can coordinate reviews with tasks, Q&A and changelogs.',
+            excerpt: 'A short example article connecting multiple Atlas plugins.',
+            author: 'Atlas Team',
+            publishedAt: '2026-06-13',
+            roles: []
+          },
+          markdown: '# Policy Review Rhythm\n\nUse documentation for the controlled policy text, tasks for ownership, Q&A for discussion, and changelogs for visible changes.\n'
+        }
+      ];
+      for (const post of posts) {
+        const filePath = normalize(join(blogDir, `${post.slug}.md`));
+        if (!filePath.startsWith(blogDir) || context.existsSync(filePath)) continue;
+        context.writeFileSync(filePath, context.ensureTrailingNewline(serializeBlogPost(context, post)), 'utf8');
+      }
+    },
     async handleRequest(context) {
       const { req, res, url, user, locale } = context;
 

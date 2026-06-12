@@ -64,6 +64,38 @@ export default function createFormsPlugin({ manifest, rootDir }) {
         DELETE FROM sqlite_sequence WHERE name IN ('forms', 'form_submissions');
       `);
     },
+    seedInitialData(context) {
+      if (context.db.prepare('SELECT COUNT(*) AS count FROM forms').get().count) return;
+      const adminId = getSeedAdminId(context);
+      const permissions = normalizeFormPermissions({
+        manage: { roles: ['Admins'] },
+        evaluate: { roles: ['Admins'] },
+        view: { roles: ['Admins', 'Users'] },
+        submit: { roles: ['Admins', 'Users'] }
+      });
+      const fields = normalizeFormFields([
+        { type: 'divider', label: 'Incident details' },
+        { type: 'text', label: 'Affected system', required: true, placeholder: 'VPN, laptop, customer portal' },
+        { type: 'select', label: 'Severity', required: true, options: ['Low', 'Medium', 'High', 'Critical'] },
+        { type: 'date', label: 'Observed date', required: true },
+        { type: 'textarea', label: 'What happened?', required: true, helpText: 'Describe symptoms, affected people and known timeline.' },
+        { type: 'email', label: 'Contact email', required: true },
+        { type: 'checkbox', label: 'Personal data may be affected' }
+      ]);
+      context.db.prepare(`
+        INSERT INTO forms (slug, title, description, intro_text, creator_user_id, status, permissions_json, fields_json, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      `).run(
+        'security-incident-report',
+        'Security Incident Report',
+        'Example intake form for reporting security and privacy incidents.',
+        'Use this sample to understand form fields, permissions and review workflows.',
+        adminId,
+        'active',
+        JSON.stringify(permissions),
+        JSON.stringify(fields)
+      );
+    },
     async handleRequest(context) {
       const { req, res, url, user, locale } = context;
 
@@ -277,6 +309,10 @@ export default function createFormsPlugin({ manifest, rootDir }) {
   function normalizeEmailList(values) {
     const list = Array.isArray(values) ? values : [values];
     return Array.from(new Set(list.flatMap((value) => String(value || '').split(/[,\n]/)).map((item) => item.trim().toLowerCase()).filter(Boolean)));
+  }
+
+  function getSeedAdminId(context) {
+    return context.db.prepare('SELECT id FROM users WHERE is_admin = 1 ORDER BY id LIMIT 1').get()?.id || null;
   }
 
   function normalizeFormPermissionEntry(value) {

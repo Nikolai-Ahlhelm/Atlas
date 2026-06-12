@@ -122,6 +122,52 @@ export default function createChangelogPlugin({ manifest, rootDir }) {
         DELETE FROM sqlite_sequence WHERE name IN ('changelog_lists', 'changelog_columns', 'changelog_entries');
       `);
     },
+    seedInitialData(context) {
+      if (context.db.prepare('SELECT COUNT(*) AS count FROM changelog_lists').get().count) return;
+      const adminId = getSeedAdminId(context);
+      const authorName = context.db.prepare('SELECT name, email FROM users WHERE id = ?').get(adminId)?.name || 'Atlas Team';
+      const now = new Date().toISOString();
+      const listId = context.db.prepare(`
+        INSERT INTO changelog_lists (slug, title, description, intro_text, status, tag_suggestions_json, creator_user_id, creator_name, updated_by_user_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        'product-releases',
+        'Product Releases',
+        'Example release tracker with sortable columns, status filters and tags.',
+        'Use this list to track changes from idea to shipped release.',
+        'active',
+        JSON.stringify([{ label: 'security', color: '#dc2626' }, { label: 'ux', color: '#4f7cff' }, { label: 'automation', color: '#16a34a' }]),
+        adminId,
+        authorName,
+        adminId,
+        now,
+        now
+      ).lastInsertRowid;
+      createDefaultColumns(listId, context);
+      for (const key of CHANGELOG_PERMISSION_KEYS) context.db.prepare('INSERT OR IGNORE INTO changelog_list_roles (list_id, permission_key, role_name) VALUES (?, ?, ?)').run(listId, key, 'Admins');
+      for (const key of ['viewer', 'editor']) context.db.prepare('INSERT OR IGNORE INTO changelog_list_roles (list_id, permission_key, role_name) VALUES (?, ?, ?)').run(listId, key, 'Users');
+      const columns = context.db.prepare('SELECT * FROM changelog_columns WHERE list_id = ? ORDER BY position').all(listId).map((column) => ({
+        ...column,
+        id: column.id,
+        type: column.type,
+        options: parseStoredJson(column.options_json, [])
+      }));
+      const entries = [
+        { summary: 'Initial plugin demo data hooks', status: 'done', change_date: '2026-06-12', tags: ['automation', 'ux'] },
+        { summary: 'Security incident form template', status: 'in_progress', change_date: '2026-06-18', tags: ['security'] },
+        { summary: 'Directory profile enrichment', status: 'open', change_date: '2026-06-25', tags: ['ux'] }
+      ];
+      for (const entry of entries) {
+        const entryId = context.db.prepare(`
+          INSERT INTO changelog_entries (list_id, created_by_user_id, created_by_name, updated_by_user_id, updated_by_name, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(listId, adminId, authorName, adminId, authorName, now, now).lastInsertRowid;
+        for (const column of columns) {
+          const value = entry[column.column_key] ?? null;
+          persistEntryValue(entryId, column, normalizeEntryValue(column, value));
+        }
+      }
+    },
     async handleRequest(context) {
       const { req, res, url, user, locale } = context;
 
@@ -991,6 +1037,10 @@ export default function createChangelogPlugin({ manifest, rootDir }) {
         now
       );
     }
+  }
+
+  function getSeedAdminId(context) {
+    return context.db.prepare('SELECT id FROM users WHERE is_admin = 1 ORDER BY id LIMIT 1').get()?.id || null;
   }
 
   function parseEntryQuery(searchParams, columns) {

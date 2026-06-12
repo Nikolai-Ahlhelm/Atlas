@@ -25,6 +25,32 @@ export default function createDocumentationPlugin({ manifest, rootDir }) {
       helpers = context;
       catalog = loadCatalog();
     },
+    seedInitialData(context) {
+      helpers = context;
+      catalog = loadCatalog();
+      if (catalog.policies.length) return;
+      const gettingStartedDir = resolveDocsDirectory('getting-started');
+      if (!existsSync(gettingStartedDir)) mkdirSync(gettingStartedDir, { recursive: true });
+      writeCategoryMeta('getting-started', { label: 'Getting Started', position: 1, roles: [] });
+      const pages = [
+        {
+          path: 'getting-started/index.md',
+          meta: { title: 'Getting Started with Atlas', description: 'Demo documentation for the initial workspace.', owner: 'Atlas Team', version: '1.0', reviewDate: '2026-12-31', roles: [], position: 1 },
+          markdown: '# Getting Started with Atlas\n\nThis sample documentation page shows how policies and guidance appear in the documentation plugin.\n\n## Explore the workspace\n\nUse the seeded tasks, forms, Q&A and changelog entries to understand how plugin data connects.'
+        },
+        {
+          path: 'getting-started/security-baseline.md',
+          meta: { title: 'Security Baseline', description: 'A short example policy page for demos.', owner: 'Security Team', version: '1.0', reviewDate: '2026-12-31', roles: [], position: 2 },
+          markdown: '# Security Baseline\n\nReport suspicious activity quickly, keep access role-based, and document review outcomes where the team can find them.\n'
+        }
+      ];
+      for (const page of pages) {
+        const filePath = resolveDocsPath(page.path);
+        if (existsSync(filePath)) continue;
+        writeFileSync(filePath, context.ensureTrailingNewline(serializeEditablePage({ meta: page.meta, markdown: page.markdown })), 'utf8');
+      }
+      catalog = loadCatalog();
+    },
     async handleRequest(context) {
       const { req, res, url, user, locale } = context;
 

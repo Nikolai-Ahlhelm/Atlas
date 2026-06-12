@@ -72,6 +72,34 @@ export default function createAnnouncementsPlugin({ manifest, rootDir }) {
         DELETE FROM sqlite_sequence WHERE name IN ('announcements', 'announcement_acknowledgements');
       `);
     },
+    seedInitialData(context) {
+      if (context.db.prepare('SELECT COUNT(*) AS count FROM announcements').get().count) return;
+      const adminId = getSeedAdminId(context);
+      const now = new Date();
+      const nextMonth = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      const items = [
+        {
+          title: 'Welcome to Atlas',
+          content: 'This pinned announcement shows how important workspace updates appear for everyone.',
+          priority: 'high',
+          isPinned: 1,
+          requiresAcknowledgement: 0
+        },
+        {
+          title: 'Please review the security baseline',
+          content: 'Confirm that you have read the current security expectations for incident reporting and access handling.',
+          priority: 'normal',
+          isPinned: 0,
+          requiresAcknowledgement: 1
+        }
+      ];
+      for (const item of items) {
+        context.db.prepare(`
+          INSERT INTO announcements (title, content, priority, starts_at, ends_at, is_pinned, requires_acknowledgement, target_roles_json, target_user_ids_json, created_by_user_id, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        `).run(item.title, item.content, item.priority, now.toISOString(), nextMonth, item.isPinned, item.requiresAcknowledgement, JSON.stringify([]), JSON.stringify([]), adminId);
+      }
+    },
     async handleRequest(context) {
       const { req, res, url, user, locale } = context;
 
@@ -334,6 +362,10 @@ export default function createAnnouncementsPlugin({ manifest, rootDir }) {
     if (db.prepare('SELECT COUNT(*) AS count FROM announcement_permissions').get().count) return;
     for (const key of PERMISSION_KEYS) db.prepare('INSERT OR IGNORE INTO announcement_permissions (permission_key, role_name) VALUES (?, ?)').run(key, 'Admins');
     for (const key of ['announcements.view', 'announcements.acknowledge']) db.prepare('INSERT OR IGNORE INTO announcement_permissions (permission_key, role_name) VALUES (?, ?)').run(key, 'Users');
+  }
+
+  function getSeedAdminId(context) {
+    return context.db.prepare('SELECT id FROM users WHERE is_admin = 1 ORDER BY id LIMIT 1').get()?.id || null;
   }
 
   function hasPermission(user, key) {

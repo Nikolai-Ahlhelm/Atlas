@@ -98,6 +98,46 @@ export default function createQaPlugin({ manifest, rootDir }) {
         DELETE FROM sqlite_sequence WHERE name IN ('qa_questions', 'qa_answers', 'qa_tags', 'qa_question_votes', 'qa_answer_votes');
       `);
     },
+    seedInitialData(context) {
+      if (context.db.prepare('SELECT COUNT(*) AS count FROM qa_questions').get().count) return;
+      const adminId = getSeedAdminId(context);
+      const tags = [
+        ['Policies', 'policies', '#4f7cff'],
+        ['Access', 'access', '#16a34a'],
+        ['Incidents', 'incidents', '#dc2626']
+      ].map(([name, slug, color]) => ({
+        name,
+        id: context.db.prepare('INSERT OR IGNORE INTO qa_tags (name, slug, color) VALUES (?, ?, ?)').run(name, slug, color).lastInsertRowid
+          || context.db.prepare('SELECT id FROM qa_tags WHERE slug = ?').get(slug)?.id
+      }));
+      const firstSlug = uniqueSlug(context, 'qa_questions', 'How should we report a suspected phishing mail?');
+      const firstId = context.db.prepare(`
+        INSERT INTO qa_questions (title, slug, content, author_user_id, status, updated_at)
+        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      `).run(
+        'How should we report a suspected phishing mail?',
+        firstSlug,
+        'We need a consistent route for suspicious emails so triage can happen quickly.',
+        adminId,
+        'solved'
+      ).lastInsertRowid;
+      for (const tag of tags.filter((item) => ['Access', 'Incidents'].includes(item.name))) context.db.prepare('INSERT OR IGNORE INTO qa_question_tags (question_id, tag_id) VALUES (?, ?)').run(firstId, tag.id);
+      const answerId = context.db.prepare('INSERT INTO qa_answers (question_id, author_user_id, content, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)').run(firstId, adminId, 'Use the Security Incident Report form and attach the mail headers if available. The sample form shows the minimum information we expect.').lastInsertRowid;
+      context.db.prepare('UPDATE qa_questions SET accepted_answer_id = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(answerId, 'solved', firstId);
+
+      const secondId = context.db.prepare(`
+        INSERT INTO qa_questions (title, slug, content, author_user_id, status, updated_at)
+        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      `).run(
+        'Where do policy owners maintain review notes?',
+        uniqueSlug(context, 'qa_questions', 'Where do policy owners maintain review notes?'),
+        'I want to understand whether reviews belong in documentation, tasks or changelogs.',
+        adminId,
+        'open'
+      ).lastInsertRowid;
+      const policyTag = tags.find((item) => item.name === 'Policies');
+      if (policyTag) context.db.prepare('INSERT OR IGNORE INTO qa_question_tags (question_id, tag_id) VALUES (?, ?)').run(secondId, policyTag.id);
+    },
     async handleRequest(context) {
       const { req, res, url, user, locale } = context;
 
@@ -374,6 +414,10 @@ export default function createQaPlugin({ manifest, rootDir }) {
     if (db.prepare('SELECT COUNT(*) AS count FROM qa_permissions').get().count) return;
     for (const key of QA_PERMISSION_KEYS) db.prepare('INSERT OR IGNORE INTO qa_permissions (permission_key, role_name) VALUES (?, ?)').run(key, 'Admins');
     for (const key of ['qa.view', 'qa.ask', 'qa.answer', 'qa.vote', 'qa.accept_answer']) db.prepare('INSERT OR IGNORE INTO qa_permissions (permission_key, role_name) VALUES (?, ?)').run(key, 'Users');
+  }
+
+  function getSeedAdminId(context) {
+    return context.db.prepare('SELECT id FROM users WHERE is_admin = 1 ORDER BY id LIMIT 1').get()?.id || null;
   }
 
   function hasPermission(user, key) {

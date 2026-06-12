@@ -89,6 +89,54 @@ export default function createDirectoryPlugin({ manifest, rootDir }) {
         DELETE FROM sqlite_sequence WHERE name IN ('directory_profiles', 'directory_profile_fields', 'directory_profile_field_values', 'directory_skills');
       `);
     },
+    seedInitialData(context) {
+      if (context.db.prepare('SELECT COUNT(*) AS count FROM directory_profile_fields').get().count) return;
+      const fields = [
+        ['Focus area', 'text', 0, 'members', 0],
+        ['Office hours', 'text', 0, 'members', 1],
+        ['Emergency contact', 'email', 0, 'private', 2]
+      ].map(([name, type, required, visibility, sortOrder]) => ({
+        name,
+        id: context.db.prepare(`
+          INSERT INTO directory_profile_fields (name, field_type, is_required, visibility_default, sort_order)
+          VALUES (?, ?, ?, ?, ?)
+        `).run(name, type, required, visibility, sortOrder).lastInsertRowid
+      }));
+      const skills = ['Policy Review', 'Incident Response', 'Risk Assessment', 'Access Management'].map((name) => ({
+        name,
+        id: context.db.prepare('INSERT OR IGNORE INTO directory_skills (name) VALUES (?)').run(name).lastInsertRowid
+          || context.db.prepare('SELECT id FROM directory_skills WHERE name = ?').get(name)?.id
+      }));
+      const users = context.listUsers().filter((user) => user.active).slice(0, 4);
+      users.forEach((user, index) => {
+        const existing = getProfileByUserId(user.id);
+        const profile = existing || (() => {
+          context.db.prepare('INSERT INTO directory_profiles (user_id, display_name, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)').run(user.id, user.name || user.email || 'User');
+          return getProfileByUserId(user.id);
+        })();
+        if (!profile) return;
+        if (!profile.bio && !profile.jobTitle && !profile.department) {
+          context.db.prepare(`
+            UPDATE directory_profiles SET bio = ?, location = ?, job_title = ?, department = ?, visibility = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+          `).run(
+            index === 0 ? 'Maintains the Atlas workspace and sample data.' : 'Example profile used to demonstrate the member directory.',
+            index === 0 ? 'Berlin' : 'Remote',
+            index === 0 ? 'Workspace Administrator' : 'Policy Contributor',
+            index === 0 ? 'Security' : 'Operations',
+            'members',
+            profile.id
+          );
+        }
+        fields.forEach((field, fieldIndex) => {
+          const value = fieldIndex === 0 ? (index === 0 ? 'Platform governance' : 'Policy operations') : fieldIndex === 1 ? 'Tuesdays 10:00-11:00' : user.email;
+          context.db.prepare(`
+            INSERT OR IGNORE INTO directory_profile_field_values (profile_id, field_id, value, visibility)
+            VALUES (?, ?, ?, ?)
+          `).run(profile.id, field.id, value, fieldIndex === 2 ? 'private' : 'members');
+        });
+        for (const skill of skills.slice(index % 2, (index % 2) + 2)) context.db.prepare('INSERT OR IGNORE INTO directory_profile_skills (profile_id, skill_id) VALUES (?, ?)').run(profile.id, skill.id);
+      });
+    },
     async handleRequest(context) {
       const { req, res, url, user, locale } = context;
 
