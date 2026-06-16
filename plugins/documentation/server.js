@@ -29,9 +29,12 @@ export default function createDocumentationPlugin({ manifest, rootDir }) {
       helpers = context;
       catalog = loadCatalog();
       if (catalog.policies.length) return;
-      const gettingStartedDir = resolveDocsDirectory('getting-started');
-      if (!existsSync(gettingStartedDir)) mkdirSync(gettingStartedDir, { recursive: true });
-      writeCategoryMeta('getting-started', { label: 'Getting Started', position: 1, roles: [] });
+      context.saveContentCategoryRecord({
+        relativeDir: 'getting-started',
+        sourcePath: 'docs/getting-started/category.json',
+        meta: { label: 'Getting Started', position: 1, roles: [] },
+        mode: 'create'
+      });
       const pages = [
         {
           path: 'getting-started/index.md',
@@ -45,9 +48,17 @@ export default function createDocumentationPlugin({ manifest, rootDir }) {
         }
       ];
       for (const page of pages) {
-        const filePath = resolveDocsPath(page.path);
-        if (existsSync(filePath)) continue;
-        writeFileSync(filePath, context.ensureTrailingNewline(serializeEditablePage({ meta: page.meta, markdown: page.markdown })), 'utf8');
+        const slug = page.path.replace(/\.md$/i, '').replace(/\/index$/i, '');
+        if (context.getContentPageRecord('doc', slug)) continue;
+        context.saveContentPageRecord({
+          type: 'doc',
+          slug,
+          title: page.meta.title,
+          meta: page.meta,
+          markdown: page.markdown,
+          sourcePath: `docs/${page.path}`,
+          mode: 'create'
+        });
       }
       catalog = loadCatalog();
     },
@@ -55,23 +66,23 @@ export default function createDocumentationPlugin({ manifest, rootDir }) {
       const { req, res, url, user, locale } = context;
 
       if (url.pathname === '/api/admin/documentation/tree' && req.method === 'GET') {
-        context.requireAdmin(user, res, () => context.sendJson(res, 200, getEditableContentTree()));
+        context.requireAdmin(user, res, () => context.sendJson(res, 200, context.getEditableContentTree()));
         return true;
       }
       if (url.pathname === '/api/admin/documentation/page' && req.method === 'GET') {
-        context.requireAdmin(user, res, () => handleGetEditablePage(context));
+        context.requireAdmin(user, res, () => context.handleGetEditablePage(res, url));
         return true;
       }
       if (url.pathname === '/api/admin/documentation/page' && req.method === 'POST') {
-        context.requireAdmin(user, res, async () => handleSaveEditablePage(context));
+        context.requireAdmin(user, res, async () => context.handleSaveEditablePage(req, res));
         return true;
       }
       if (url.pathname === '/api/admin/documentation/category' && req.method === 'GET') {
-        context.requireAdmin(user, res, () => handleGetEditableCategory(context));
+        context.requireAdmin(user, res, () => context.handleGetEditableCategory(res, url));
         return true;
       }
       if (url.pathname === '/api/admin/documentation/category' && req.method === 'POST') {
-        context.requireAdmin(user, res, async () => handleSaveEditableCategory(context));
+        context.requireAdmin(user, res, async () => context.handleSaveEditableCategory(req, res));
         return true;
       }
       if (url.pathname === '/api/admin/documentation/reload' && req.method === 'POST') {
@@ -132,33 +143,7 @@ export default function createDocumentationPlugin({ manifest, rootDir }) {
   }
 
   function loadCatalog() {
-    const mainDocsDir = docsDir();
-    const mainHomePath = homePath();
-    helpers.logInfo(`Loading documentation catalog from ${mainDocsDir}`);
-    const home = existsSync(mainHomePath) ? createPolicy(mainHomePath, '__home', []) : null;
-    if (existsSync(mainDocsDir)) {
-      const policies = [];
-      const sidebar = scanDocsDirectory(mainDocsDir, '', [], policies).items;
-      const bySlug = new Map(policies.map((policy) => [policy.slug, policy]));
-      if (home) bySlug.set(home.slug, home);
-      helpers.logInfo(`Documentation catalog loaded: ${policies.length} documents, ${sidebar.length} top-level sidebar entries`);
-      return { policies, bySlug, sidebar, home };
-    }
-
-    const fallbackDir = legacyPolicyDir();
-    const policies = existsSync(fallbackDir)
-      ? readdirSync(fallbackDir)
-        .filter((file) => file.endsWith('.md'))
-        .map((file) => createPolicy(join(fallbackDir, file), file.replace(/\.md$/, ''), []))
-        .sort((a, b) => a.title.localeCompare(b.title, 'de'))
-      : [];
-    const sidebarPath = join(helpers.ROOT, 'content', 'sidebar.json');
-    const sidebar = existsSync(sidebarPath)
-      ? JSON.parse(readFileSync(sidebarPath, 'utf8'))
-      : policies.map((policy) => policy.slug);
-    const bySlug = new Map(policies.map((policy) => [policy.slug, policy]));
-    if (home) bySlug.set(home.slug, home);
-    return { policies, bySlug, sidebar, home };
+    return helpers.loadDocumentationCatalog();
   }
 
   function scanDocsDirectory(dir, relativeDir, inheritedRoles, policies) {

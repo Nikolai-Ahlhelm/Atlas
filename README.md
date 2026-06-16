@@ -33,7 +33,7 @@ Useful environment variables:
 
 - `PORT`: HTTP port inside the container, default `3000`
 - `HOST`: bind address, `0.0.0.0` in Docker
-- `DATA_DIR`: SQLite storage path, default `/app/data`
+- `DATA_DIR`: Atlas data directory, default `/app/data`. Keep this path persistent in production.
 
 ## Pull from GHCR
 
@@ -45,7 +45,7 @@ Pull the latest published image:
 docker pull ghcr.io/nikolai-ahlhelm/atlas:latest
 ```
 
-Run it with a persistent volume for SQLite:
+Run it with a persistent volume for Atlas data. The SQLite database stores users, settings, plugin data, and editable content such as documentation, CMS pages, and blog posts:
 
 ```bash
 docker run -d \
@@ -129,7 +129,9 @@ The admin portal can manage users, roles, branding, login copy, themes, menu lin
 
 ## Database behavior
 
-If `data.sqlite` is deleted and the app is started again, Atlas recreates the database automatically and seeds it with the default Admin account, roles, and settings.
+If `data.sqlite` is deleted and the app is started again, Atlas recreates the database automatically and seeds it with the default Admin account, roles, settings, and starter content.
+
+Editable content is persisted in `/app/data/data.sqlite`. On startup, Atlas imports Markdown files from `content/home.md`, `content/docs`, `content/cms`, and `content/blog` only when the corresponding SQLite record does not already exist. Existing database content always wins over files from a new image, so Docker updates do not replace production CMS pages, blog posts, or edited documentation as long as `/app/data` remains mounted. Content that was already lost in an earlier deployment cannot be reconstructed automatically without a backup or old volume copy.
 
 
 <br>

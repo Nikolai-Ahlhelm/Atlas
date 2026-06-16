@@ -199,6 +199,7 @@ if (!existsSync(DATA_DIR)) {
 const db = new DatabaseSync(DB_PATH);
 initializeDatabase();
 
+let catalog = loadCatalog();
 let cmsCatalog = loadCmsCatalog();
 
 if (process.argv.includes('--check')) {
@@ -471,6 +472,29 @@ function initializeDatabase() {
       key TEXT PRIMARY KEY,
       enabled INTEGER NOT NULL DEFAULT 1
     );
+    CREATE TABLE IF NOT EXISTS content_pages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      type TEXT NOT NULL,
+      slug TEXT NOT NULL,
+      title TEXT NOT NULL DEFAULT '',
+      meta_json TEXT NOT NULL DEFAULT '{}',
+      markdown TEXT NOT NULL DEFAULT '',
+      source_path TEXT NOT NULL DEFAULT '',
+      deleted_at TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(type, slug)
+    );
+    CREATE TABLE IF NOT EXISTS content_categories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      relative_dir TEXT NOT NULL UNIQUE,
+      label TEXT NOT NULL DEFAULT '',
+      meta_json TEXT NOT NULL DEFAULT '{}',
+      source_path TEXT NOT NULL DEFAULT '',
+      deleted_at TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
     CREATE TABLE IF NOT EXISTS forms (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       slug TEXT NOT NULL UNIQUE,
@@ -502,6 +526,9 @@ function initializeDatabase() {
 
   ensureColumn('roles', 'color', "TEXT NOT NULL DEFAULT '#5d6b82'");
   ensureColumn('users', 'language', 'TEXT');
+  ensureColumn('content_pages', 'deleted_at', 'TEXT');
+  ensureColumn('content_categories', 'deleted_at', 'TEXT');
+  migrateFileContentToDatabase();
   seedDeveloperPermissions();
   seedWebhookPermissions();
   startWebhookWorker();
@@ -649,6 +676,8 @@ function resetDatabaseToFactoryDefaults() {
   db.exec('BEGIN');
   try {
     db.exec(`
+      DELETE FROM content_categories;
+      DELETE FROM content_pages;
       DELETE FROM user_roles;
       DELETE FROM sessions;
       DELETE FROM api_key_usage;
@@ -663,7 +692,7 @@ function resetDatabaseToFactoryDefaults() {
       DELETE FROM roles;
       DELETE FROM settings;
       DELETE FROM plugins;
-      DELETE FROM sqlite_sequence WHERE name IN ('users', 'roles', 'api_keys', 'webhook_deliveries', 'webhook_subscriptions', 'webhook_endpoints');
+      DELETE FROM sqlite_sequence WHERE name IN ('content_pages', 'content_categories', 'users', 'roles', 'api_keys', 'webhook_deliveries', 'webhook_subscriptions', 'webhook_endpoints');
     `);
     resetPluginsToFactoryDefaults();
     initializePlugins();
@@ -677,29 +706,315 @@ function resetDatabaseToFactoryDefaults() {
   }
 }
 
+function migrateFileContentToDatabase() {
+  logInfo('Migrating file-backed content into SQLite when missing');
+  importDocumentationFiles();
+  importCmsFiles();
+  importBlogFiles();
+}
+
+function importDocumentationFiles() {
+  if (existsSync(HOME_PATH)) importContentPageFile('doc', '__home', HOME_PATH, 'home.md');
+  if (!existsSync(DOCS_DIR)) return;
+  importDocumentationDirectory(DOCS_DIR, '');
+}
+
+function importDocumentationDirectory(dir, relativeDir) {
+  const categoryPath = join(dir, 'category.json');
+  if (existsSync(categoryPath)) importContentCategoryFile(relativeDir, categoryPath);
+  for (const entry of readdirSync(dir, { withFileTypes: true }).filter((item) => !item.name.startsWith('.') && item.name !== 'category.json')) {
+    const fullPath = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      const childRelative = relativeDir ? `${relativeDir}/${entry.name}` : entry.name;
+      importDocumentationDirectory(fullPath, childRelative);
+      continue;
+    }
+    if (!entry.isFile() || !entry.name.endsWith('.md')) continue;
+    const basename = entry.name.replace(/\.md$/i, '');
+    const slug = basename === 'index' ? relativeDir : (relativeDir ? `${relativeDir}/${basename}` : basename);
+    if (!slug) continue;
+    importContentPageFile('doc', slug, fullPath, toContentRelativePath(fullPath));
+  }
+}
+
+function importCmsFiles() {
+  if (!existsSync(CMS_DIR)) return;
+  for (const file of readdirSync(CMS_DIR).filter((name) => name.endsWith('.md'))) {
+    const filePath = join(CMS_DIR, file);
+    importContentPageFile('cms', file.replace(/\.md$/i, ''), filePath, toContentRelativePath(filePath));
+  }
+}
+
+function importBlogFiles() {
+  const blogDir = join(CONTENT_DIR, 'blog');
+  if (!existsSync(blogDir)) return;
+  for (const file of readdirSync(blogDir).filter((name) => name.endsWith('.md'))) {
+    const filePath = join(blogDir, file);
+    importContentPageFile('blog', file.replace(/\.md$/i, ''), filePath, toContentRelativePath(filePath));
+  }
+}
+
+function importContentPageFile(type, slug, filePath, sourcePath) {
+  const normalizedSlug = String(slug || '').trim();
+  if (!normalizedSlug || getContentPageRecord(type, normalizedSlug, { includeDeleted: true })) return;
+  const raw = readFileSync(filePath, 'utf8');
+  const parsed = parseFrontmatter(raw);
+  saveContentPageRecord({
+    type,
+    slug: normalizedSlug,
+    title: String(parsed.meta.title || titleFromSlug(normalizedSlug.split('/').pop() || normalizedSlug)).trim(),
+    meta: parsed.meta,
+    markdown: parsed.markdown,
+    sourcePath,
+    mode: 'import'
+  });
+}
+
+function importContentCategoryFile(relativeDir, filePath) {
+  const normalizedDir = sanitizeRelativeDir(relativeDir);
+  if (getContentCategoryRecord(normalizedDir, { includeDeleted: true })) return;
+  try {
+    const meta = JSON.parse(readFileSync(filePath, 'utf8'));
+    saveContentCategoryRecord({
+      relativeDir: normalizedDir,
+      meta,
+      sourcePath: toContentRelativePath(filePath),
+      mode: 'import'
+    });
+  } catch (error) {
+    logWarn(`Invalid category file ignored for ${relativeDir || '.'}`, error instanceof Error ? error.message : String(error));
+  }
+}
+
+function listContentPageRecords(type, options = {}) {
+  const includeDeleted = options.includeDeleted === true;
+  return db.prepare(`
+    SELECT type, slug, title, meta_json, markdown, source_path, created_at, updated_at, deleted_at
+    FROM content_pages
+    WHERE type = ? ${includeDeleted ? '' : 'AND deleted_at IS NULL'}
+    ORDER BY slug
+  `).all(type).map(normalizeContentPageRecord);
+}
+
+function getContentPageRecord(type, slug, options = {}) {
+  const includeDeleted = options.includeDeleted === true;
+  const row = db.prepare(`
+    SELECT type, slug, title, meta_json, markdown, source_path, created_at, updated_at, deleted_at
+    FROM content_pages
+    WHERE type = ? AND slug = ? ${includeDeleted ? '' : 'AND deleted_at IS NULL'}
+  `).get(type, slug);
+  return row ? normalizeContentPageRecord(row) : null;
+}
+
+function saveContentPageRecord({ type, slug, title = '', meta = {}, markdown = '', sourcePath = '', mode = 'upsert' }) {
+  const pageType = String(type || '').trim();
+  const pageSlug = String(slug || '').trim();
+  if (!pageType || !pageSlug) throw new Error('Invalid content page key.');
+  const normalizedMeta = meta && typeof meta === 'object' ? meta : {};
+  const normalizedTitle = String(title || normalizedMeta.title || titleFromSlug(pageSlug.split('/').pop() || pageSlug)).trim();
+  const existing = getContentPageRecord(pageType, pageSlug, { includeDeleted: true });
+  if (mode === 'create' && existing && !existing.deletedAt) return { ok: false, conflict: true };
+  if (mode === 'update' && (!existing || existing.deletedAt)) return { ok: false, missing: true };
+  db.prepare(`
+    INSERT INTO content_pages (type, slug, title, meta_json, markdown, source_path, deleted_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, NULL, CURRENT_TIMESTAMP)
+    ON CONFLICT(type, slug) DO UPDATE SET
+      title = excluded.title,
+      meta_json = excluded.meta_json,
+      markdown = excluded.markdown,
+      source_path = COALESCE(NULLIF(excluded.source_path, ''), content_pages.source_path),
+      deleted_at = NULL,
+      updated_at = CURRENT_TIMESTAMP
+  `).run(pageType, pageSlug, normalizedTitle, JSON.stringify(normalizedMeta), String(markdown || ''), String(sourcePath || ''));
+  return { ok: true, record: getContentPageRecord(pageType, pageSlug) };
+}
+
+function deleteContentPageRecord(type, slug) {
+  const existing = getContentPageRecord(type, slug, { includeDeleted: true });
+  if (!existing || existing.deletedAt) return false;
+  db.prepare('UPDATE content_pages SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE type = ? AND slug = ?').run(type, slug);
+  return true;
+}
+
+function normalizeContentPageRecord(row) {
+  const meta = parseJsonObject(row.meta_json, {});
+  return {
+    type: row.type,
+    slug: row.slug,
+    title: row.title || meta.title || titleFromSlug(String(row.slug || '').split('/').pop() || row.slug),
+    meta,
+    markdown: row.markdown || '',
+    sourcePath: row.source_path || '',
+    file: row.source_path || `${row.type}/${row.slug}`,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    deletedAt: row.deleted_at || ''
+  };
+}
+
+function listContentCategoryRecords(options = {}) {
+  const includeDeleted = options.includeDeleted === true;
+  return db.prepare(`
+    SELECT relative_dir, label, meta_json, source_path, created_at, updated_at, deleted_at
+    FROM content_categories
+    ${includeDeleted ? '' : 'WHERE deleted_at IS NULL'}
+    ORDER BY relative_dir
+  `).all().map(normalizeContentCategoryRecord);
+}
+
+function getContentCategoryRecord(relativeDir, options = {}) {
+  const includeDeleted = options.includeDeleted === true;
+  const row = db.prepare(`
+    SELECT relative_dir, label, meta_json, source_path, created_at, updated_at, deleted_at
+    FROM content_categories
+    WHERE relative_dir = ? ${includeDeleted ? '' : 'AND deleted_at IS NULL'}
+  `).get(sanitizeRelativeDir(relativeDir));
+  return row ? normalizeContentCategoryRecord(row) : null;
+}
+
+function saveContentCategoryRecord({ relativeDir = '', meta = {}, sourcePath = '', mode = 'upsert' }) {
+  const dir = sanitizeRelativeDir(relativeDir);
+  const normalizedMeta = meta && typeof meta === 'object' ? meta : {};
+  const existing = getContentCategoryRecord(dir, { includeDeleted: true });
+  if (mode === 'create' && existing && !existing.deletedAt) return { ok: false, conflict: true };
+  if (mode === 'update' && (!existing || existing.deletedAt)) return { ok: false, missing: true };
+  const label = String(normalizedMeta.label || titleFromSlug(dir.split('/').pop() || 'Documentation root')).trim();
+  db.prepare(`
+    INSERT INTO content_categories (relative_dir, label, meta_json, source_path, deleted_at, updated_at)
+    VALUES (?, ?, ?, ?, NULL, CURRENT_TIMESTAMP)
+    ON CONFLICT(relative_dir) DO UPDATE SET
+      label = excluded.label,
+      meta_json = excluded.meta_json,
+      source_path = COALESCE(NULLIF(excluded.source_path, ''), content_categories.source_path),
+      deleted_at = NULL,
+      updated_at = CURRENT_TIMESTAMP
+  `).run(dir, label, JSON.stringify(normalizedMeta), String(sourcePath || ''));
+  return { ok: true, record: getContentCategoryRecord(dir) };
+}
+
+function normalizeContentCategoryRecord(row) {
+  const meta = parseJsonObject(row.meta_json, {});
+  return {
+    relativeDir: row.relative_dir || '',
+    label: row.label || meta.label || titleFromSlug(String(row.relative_dir || '').split('/').pop() || 'Documentation root'),
+    meta,
+    sourcePath: row.source_path || '',
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    deletedAt: row.deleted_at || ''
+  };
+}
+
 function loadCatalog() {
-  logInfo(`Loading catalog from ${DOCS_DIR}`);
-  const home = existsSync(HOME_PATH) ? createPolicy(HOME_PATH, '__home', []) : null;
-  if (existsSync(DOCS_DIR)) {
-    const policies = [];
-    const sidebar = scanDocsDirectory(DOCS_DIR, '', [], policies).items;
-    const bySlug = new Map(policies.map((policy) => [policy.slug, policy]));
-    if (home) bySlug.set(home.slug, home);
-    logInfo(`Catalog loaded from docs directory: ${policies.length} documents, ${sidebar.length} top-level sidebar entries`);
-    return { policies, bySlug, sidebar, home };
+  return loadDocumentationCatalogFromDatabase();
+}
+
+function loadDocumentationCatalogFromDatabase() {
+  logInfo('Loading documentation catalog from SQLite');
+  const records = listContentPageRecords('doc');
+  const policies = records
+    .filter((record) => record.slug !== '__home')
+    .map((record) => createPolicyFromRecord(record))
+    .sort((a, b) => {
+      const positionDiff = Number(a.meta?.position ?? a.meta?.sidebar_position ?? 999) - Number(b.meta?.position ?? b.meta?.sidebar_position ?? 999);
+      return positionDiff || a.title.localeCompare(b.title, 'de');
+    });
+  const bySlug = new Map(policies.map((policy) => [policy.slug, policy]));
+  const homeRecord = records.find((record) => record.slug === '__home');
+  const home = homeRecord ? createPolicyFromRecord(homeRecord) : null;
+  if (home) bySlug.set(home.slug, home);
+  const sidebar = buildDocumentationSidebar(policies);
+  logInfo(`Documentation catalog loaded from SQLite: ${policies.length} documents, ${sidebar.length} top-level sidebar entries`);
+  return { policies, bySlug, sidebar, home };
+}
+
+function createPolicyFromRecord(record) {
+  const meta = record.meta || {};
+  const rendered = markdownToHtml(record.markdown, record.slug === '__home' ? '' : record.slug);
+  return {
+    slug: record.slug,
+    file: record.sourcePath || record.file || `content:${record.type}:${record.slug}`,
+    sourcePath: record.sourcePath || '',
+    meta,
+    title: meta.title || record.title || titleFromSlug(record.slug.split('/').pop()),
+    description: meta.description || '',
+    roles: Array.isArray(meta.roles) ? meta.roles : [],
+    owner: meta.owner || '',
+    version: meta.version || '',
+    reviewDate: meta.reviewDate || '',
+    html: rendered.html,
+    headings: rendered.headings,
+    markdown: record.markdown
+  };
+}
+
+function buildDocumentationSidebar(policies) {
+  const root = { items: [], children: new Map() };
+  const categoryRecords = new Map(listContentCategoryRecords().map((item) => [item.relativeDir, item]));
+  const policiesBySlug = new Map(policies.map((policy) => [policy.slug, policy]));
+
+  const ensureNode = (relativeDir) => {
+    const parts = String(relativeDir || '').split('/').filter(Boolean);
+    let node = root;
+    let current = '';
+    for (const part of parts) {
+      current = current ? `${current}/${part}` : part;
+      if (!node.children.has(part)) node.children.set(part, { relativeDir: current, items: [], children: new Map() });
+      node = node.children.get(part);
+    }
+    return node;
+  };
+
+  for (const policy of policies) {
+    const parts = policy.slug.split('/').filter(Boolean);
+    if (!parts.length) continue;
+    const filePart = parts.at(-1);
+    const dir = filePart === parts[0] && parts.length === 1 ? '' : parts.slice(0, -1).join('/');
+    const isIndex = String(policy.sourcePath || '').replace(/\\/g, '/').endsWith('/index.md');
+    if (isIndex) continue;
+    ensureNode(dir).items.push(policy.slug);
+    if (dir) ensureNode(dir);
   }
 
-  const policies = existsSync(POLICY_DIR) ? readdirSync(POLICY_DIR)
-    .filter((file) => file.endsWith('.md'))
-    .map((file) => createPolicy(join(POLICY_DIR, file), file.replace(/\.md$/, ''), []))
-    .sort((a, b) => a.title.localeCompare(b.title, 'de')) : [];
+  for (const category of categoryRecords.values()) ensureNode(category.relativeDir);
 
-  const sidebarPath = join(CONTENT_DIR, 'sidebar.json');
-  const sidebar = existsSync(sidebarPath) ? JSON.parse(readFileSync(sidebarPath, 'utf8')) : policies.map((policy) => policy.slug);
-  const bySlug = new Map(policies.map((policy) => [policy.slug, policy]));
-  if (home) bySlug.set(home.slug, home);
-  logInfo(`Catalog loaded from legacy policies directory: ${policies.length} documents`);
-  return { policies, bySlug, sidebar, home };
+  const renderNode = (node) => {
+    const childCategories = Array.from(node.children.values())
+      .sort(compareCategoryNodes)
+      .map((child) => renderCategory(child));
+    const pageItems = node.items
+      .sort((a, b) => comparePolicyEntries(policiesBySlug.get(a), policiesBySlug.get(b)))
+      .filter(Boolean);
+    return [...childCategories, ...pageItems];
+  };
+
+  const renderCategory = (node) => {
+    const category = categoryRecords.get(node.relativeDir);
+    const indexPolicy = policiesBySlug.get(node.relativeDir);
+    const fallbackLabel = titleFromSlug(node.relativeDir.split('/').pop() || 'Documentation');
+    return {
+      type: 'category',
+      label: category?.meta?.label || category?.label || indexPolicy?.title || fallbackLabel,
+      slug: indexPolicy?.slug || '',
+      roles: Array.isArray(category?.meta?.roles) ? category.meta.roles : (indexPolicy?.roles || []),
+      items: renderNode(node)
+    };
+  };
+
+  function compareCategoryNodes(a, b) {
+    const aMeta = categoryRecords.get(a.relativeDir)?.meta || {};
+    const bMeta = categoryRecords.get(b.relativeDir)?.meta || {};
+    const diff = Number(aMeta.position ?? aMeta.sidebar_position ?? 999) - Number(bMeta.position ?? bMeta.sidebar_position ?? 999);
+    return diff || a.relativeDir.localeCompare(b.relativeDir, 'de');
+  }
+
+  function comparePolicyEntries(a, b) {
+    if (!a || !b) return 0;
+    const diff = Number(a.meta?.position ?? a.meta?.sidebar_position ?? 999) - Number(b.meta?.position ?? b.meta?.sidebar_position ?? 999);
+    return diff || a.title.localeCompare(b.title, 'de');
+  }
+
+  return renderNode(root);
 }
 
 function scanDocsDirectory(dir, relativeDir, inheritedRoles, policies) {
@@ -2135,8 +2450,8 @@ async function handleUpdateSettings(req, res) {
 }
 
 function getEditableContentTree() {
-  const directories = [];
-  const docs = existsSync(DOCS_DIR) ? scanEditableDocsDirectory(DOCS_DIR, '', directories) : [];
+  const directories = [{ relativeDir: '', label: 'Documentation root' }];
+  const docs = buildEditableDocsTreeFromDatabase('', directories);
   return {
     tree: [
       {
@@ -2151,52 +2466,46 @@ function getEditableContentTree() {
   };
 }
 
-function scanEditableDocsDirectory(dir, relativeDir, directories) {
+function buildEditableDocsTreeFromDatabase(relativeDir, directories) {
   const categoryMeta = readCategoryMeta(relativeDir);
   const label = categoryMeta.label || titleFromSlug(relativeDir.split('/').pop() || 'docs');
-  if (!directories.some((item) => item.relativeDir === relativeDir)) {
-    directories.push({ relativeDir, label });
+  if (relativeDir && !directories.some((item) => item.relativeDir === relativeDir)) directories.push({ relativeDir, label });
+
+  const policies = loadCatalog().policies;
+  const categoryDirs = new Set(listContentCategoryRecords().map((item) => item.relativeDir).filter(Boolean));
+  for (const policy of policies) {
+    const parts = policy.slug.split('/').filter(Boolean);
+    for (let index = 1; index < parts.length; index += 1) categoryDirs.add(parts.slice(0, index).join('/'));
+    if (String(policy.sourcePath || '').replace(/\\/g, '/').endsWith('/index.md')) categoryDirs.add(policy.slug);
   }
 
-  const entries = readdirSync(dir)
-    .filter((entry) => !entry.startsWith('.') && entry !== 'category.json')
-    .map((entry) => {
-      const fullPath = join(dir, entry);
-      return { entry, fullPath, isDirectory: statSync(fullPath).isDirectory() };
-    })
-    .sort((a, b) => {
-      if (a.entry === 'index.md') return -1;
-      if (b.entry === 'index.md') return 1;
-      if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
-      return a.entry.localeCompare(b.entry, 'de');
-    });
+  const directCategories = Array.from(categoryDirs)
+    .filter((dir) => getParentContentDir(dir) === relativeDir)
+    .sort((a, b) => a.localeCompare(b, 'de'));
+  const directPages = policies
+    .filter((policy) => getCategoryDirFromPolicySlug(policy.slug) === relativeDir)
+    .filter((policy) => !String(policy.sourcePath || '').replace(/\\/g, '/').endsWith('/index.md'))
+    .sort((a, b) => a.title.localeCompare(b.title, 'de'));
 
-  const children = [];
-  for (const item of entries) {
-    if (item.isDirectory) {
-      const childRelative = relativeDir ? `${relativeDir}/${item.entry}` : item.entry;
-      children.push({
-        type: 'category',
-        relativeDir: childRelative,
-        label: readCategoryMeta(childRelative).label || titleFromSlug(item.entry),
-        children: scanEditableDocsDirectory(item.fullPath, childRelative, directories)
-      });
-      continue;
-    }
-
-    if (!item.entry.endsWith('.md')) continue;
-    const basename = item.entry.replace(/\.md$/i, '');
-    const slug = basename === 'index' ? relativeDir : (relativeDir ? `${relativeDir}/${basename}` : basename);
-    if (!slug) continue;
-    const policy = catalog.bySlug.get(slug);
-    children.push({
+  return [
+    ...directCategories.map((dir) => ({
+      type: 'category',
+      relativeDir: dir,
+      label: readCategoryMeta(dir).label || titleFromSlug(dir.split('/').pop()),
+      children: buildEditableDocsTreeFromDatabase(dir, directories)
+    })),
+    ...directPages.map((policy) => ({
       type: 'page',
-      slug,
-      title: policy?.title || titleFromSlug(basename === 'index' ? relativeDir.split('/').pop() || 'index' : basename),
-      relativePath: toContentRelativePath(item.fullPath)
-    });
-  }
-  return children;
+      slug: policy.slug,
+      title: policy.title,
+      relativePath: policy.sourcePath || `docs/${policy.slug}.md`
+    }))
+  ];
+}
+
+function getParentContentDir(relativeDir = '') {
+  const parts = String(relativeDir || '').split('/').filter(Boolean);
+  return parts.length > 1 ? parts.slice(0, -1).join('/') : '';
 }
 
 function handleGetEditablePage(res, url) {
@@ -2219,45 +2528,36 @@ async function handleSaveEditablePage(req, res) {
     if (asIndex && !parentDir) return sendJson(res, 400, { error: 'A root index page is not supported.' });
     if (!asIndex && !slugSegment) return sendJson(res, 400, { error: 'A page slug is required.' });
 
-    const targetDir = resolveDocsDirectory(parentDir);
-    if (!existsSync(targetDir)) mkdirSync(targetDir, { recursive: true });
     const fileName = asIndex ? 'index.md' : `${slugSegment}.md`;
-    const filePath = resolveDocsPath(parentDir ? `${parentDir}/${fileName}` : fileName);
-    if (existsSync(filePath)) return sendJson(res, 409, { error: 'This page already exists.' });
+    const sourcePath = `docs/${parentDir ? `${parentDir}/` : ''}${fileName}`;
+    const slug = asIndex ? parentDir : (parentDir ? `${parentDir}/${slugSegment}` : slugSegment);
+    if (getContentPageRecord('doc', slug)) return sendJson(res, 409, { error: 'This page already exists.' });
 
     if (!meta.title) {
       meta.title = titleFromSlug(asIndex ? parentDir.split('/').pop() || 'index' : slugSegment);
     }
-    const initialRaw = serializeEditablePage({
-      meta,
-      extraMeta: normalizeExtraMeta(payload.extraMeta),
-      markdown: markdown.trim() || `# ${meta.title}\n\nWrite your content here.\n`
-    });
-    writeFileSync(filePath, ensureTrailingNewline(initialRaw), 'utf8');
+    const nextMeta = { ...normalizeExtraMeta(payload.extraMeta), ...meta };
+    saveContentPageRecord({ type: 'doc', slug, title: meta.title, meta: nextMeta, markdown: markdown.trim() || `# ${meta.title}\n\nWrite your content here.\n`, sourcePath, mode: 'create' });
     catalog = loadCatalog();
-    const slug = asIndex ? parentDir : (parentDir ? `${parentDir}/${slugSegment}` : slugSegment);
-    logInfo(`Content page created: ${slug}`, { file: filePath });
+    logInfo(`Content page created: ${slug}`, { sourcePath });
     return sendJson(res, 200, { ok: true, slug });
   }
 
   const slug = String(payload.slug || '').trim();
   const page = getEditablePage(slug);
   if (!page) return sendJson(res, 404, { error: 'Page not found.' });
-  const nextRaw = serializeEditablePage({
-    meta,
-    extraMeta: normalizeExtraMeta(payload.extraMeta),
-    markdown
-  });
-  writeFileSync(page.filePath, ensureTrailingNewline(nextRaw), 'utf8');
+  const nextMeta = { ...normalizeExtraMeta(payload.extraMeta), ...meta };
+  saveContentPageRecord({ type: 'doc', slug, title: meta.title || page.title, meta: nextMeta, markdown, sourcePath: page.relativePath, mode: 'update' });
   catalog = loadCatalog();
-  logInfo(`Content page updated: ${slug}`, { file: page.filePath });
+  logInfo(`Content page updated: ${slug}`, { sourcePath: page.relativePath });
   sendJson(res, 200, { ok: true, slug });
 }
 
 function handleGetEditableCategory(res, url) {
   const relativeDir = sanitizeRelativeDir(url.searchParams.get('dir') || '');
-  const directoryPath = resolveDocsDirectory(relativeDir);
-  if (!existsSync(directoryPath)) return sendJson(res, 404, { error: 'Category not found.' });
+  if (relativeDir && !getContentCategoryRecord(relativeDir) && !loadCatalog().policies.some((policy) => policy.slug === relativeDir || policy.slug.startsWith(`${relativeDir}/`))) {
+    return sendJson(res, 404, { error: 'Category not found.' });
+  }
 
   const meta = readCategoryMeta(relativeDir);
   sendJson(res, 200, {
@@ -2265,7 +2565,7 @@ function handleGetEditableCategory(res, url) {
     label: meta.label || titleFromSlug(relativeDir.split('/').pop() || 'docs'),
     position: Number(meta.position ?? meta.sidebar_position ?? 999),
     roles: Array.isArray(meta.roles) ? meta.roles : [],
-    configPath: toContentRelativePath(join(directoryPath, 'category.json'))
+    configPath: relativeDir ? `docs/${relativeDir}/category.json` : 'docs/category.json'
   });
 }
 
@@ -2278,44 +2578,63 @@ async function handleSaveEditableCategory(req, res) {
     const slugSegment = sanitizeSlugSegment(payload.slug);
     if (!slugSegment) return sendJson(res, 400, { error: 'A category slug is required.' });
     const relativeDir = parentDir ? `${parentDir}/${slugSegment}` : slugSegment;
-    const directoryPath = resolveDocsDirectory(relativeDir);
-    if (existsSync(directoryPath)) return sendJson(res, 409, { error: 'This category already exists.' });
-    mkdirSync(directoryPath, { recursive: true });
+    if (getContentCategoryRecord(relativeDir) || loadCatalog().policies.some((policy) => policy.slug === relativeDir || policy.slug.startsWith(`${relativeDir}/`))) {
+      return sendJson(res, 409, { error: 'This category already exists.' });
+    }
 
     const label = String(payload.label || '').trim() || titleFromSlug(slugSegment);
-    writeCategoryMeta(relativeDir, {
+    saveContentCategoryRecord({
+      relativeDir,
+      sourcePath: `docs/${relativeDir}/category.json`,
+      meta: {
       label,
       position: Number(payload.position ?? 999),
       roles: normalizeRoleList(payload.roles)
+      },
+      mode: 'create'
     });
 
     if (payload.createIndex === true) {
-      const indexPath = resolveDocsPath(`${relativeDir}/index.md`);
       const indexTitle = String(payload.indexTitle || '').trim() || label;
       const raw = String(payload.raw || '').trim() || buildMarkdownTemplate({
         title: indexTitle,
         description: '',
         roles: normalizeRoleList(payload.roles)
       });
-      writeFileSync(indexPath, ensureTrailingNewline(raw), 'utf8');
+      const parsed = parseFrontmatter(raw);
+      saveContentPageRecord({
+        type: 'doc',
+        slug: relativeDir,
+        title: parsed.meta.title || indexTitle,
+        meta: { roles: normalizeRoleList(payload.roles), ...parsed.meta },
+        markdown: parsed.markdown,
+        sourcePath: `docs/${relativeDir}/index.md`,
+        mode: 'create'
+      });
     }
 
     catalog = loadCatalog();
-    logInfo(`Content category created: ${relativeDir}`, { directory: directoryPath });
+    logInfo(`Content category created: ${relativeDir}`);
     return sendJson(res, 200, { ok: true, relativeDir });
   }
 
   const relativeDir = sanitizeRelativeDir(payload.relative_dir || payload.relativeDir || '');
-  const directoryPath = resolveDocsDirectory(relativeDir);
-  if (!existsSync(directoryPath)) return sendJson(res, 404, { error: 'Category not found.' });
+  if (relativeDir && !getContentCategoryRecord(relativeDir) && !loadCatalog().policies.some((policy) => policy.slug === relativeDir || policy.slug.startsWith(`${relativeDir}/`))) {
+    return sendJson(res, 404, { error: 'Category not found.' });
+  }
 
-  writeCategoryMeta(relativeDir, {
+  saveContentCategoryRecord({
+    relativeDir,
+    sourcePath: relativeDir ? `docs/${relativeDir}/category.json` : 'docs/category.json',
+    meta: {
     label: String(payload.label || '').trim() || titleFromSlug(relativeDir.split('/').pop() || 'docs'),
     position: Number(payload.position ?? 999),
     roles: normalizeRoleList(payload.roles)
+    },
+    mode: getContentCategoryRecord(relativeDir) ? 'update' : 'create'
   });
   catalog = loadCatalog();
-  logInfo(`Content category updated: ${relativeDir}`, { directory: directoryPath });
+  logInfo(`Content category updated: ${relativeDir}`);
   sendJson(res, 200, { ok: true, relativeDir });
 }
 
@@ -2324,7 +2643,7 @@ function getCmsStudioTree() {
     tree: cmsCatalog.pages.map((page) => ({
       slug: page.slug,
       title: page.title,
-      relativePath: toContentRelativePath(page.file),
+      relativePath: page.sourcePath || `cms/${page.slug}.md`,
       coverImage: page.coverImage
     }))
   };
@@ -2333,14 +2652,13 @@ function getCmsStudioTree() {
 function getEditableCmsPage(slug) {
   const safeSlug = sanitizeSlugSegment(slug);
   if (!safeSlug) return null;
-  const filePath = normalize(join(CMS_DIR, `${safeSlug}.md`));
-  if (!filePath.startsWith(CMS_DIR) || !existsSync(filePath)) return null;
-  const raw = readFileSync(filePath, 'utf8');
-  const parsed = parseFrontmatter(raw);
+  const record = getContentPageRecord('cms', safeSlug);
+  if (!record) return null;
+  const parsed = { meta: record.meta, markdown: record.markdown };
   return {
     slug: safeSlug,
-    filePath,
-    relativePath: toContentRelativePath(filePath),
+    filePath: record.sourcePath || `cms/${safeSlug}.md`,
+    relativePath: record.sourcePath || `cms/${safeSlug}.md`,
     markdown: parsed.markdown,
     meta: {
       title: String(parsed.meta.title || '').trim(),
@@ -2375,16 +2693,18 @@ async function handleSaveCmsStudioPage(req, res, user) {
   if (!slug) return sendJson(res, 400, { error: 'A page slug is required.' });
   if (!title) return sendJson(res, 400, { error: 'A page title is required.' });
 
-  const filePath = normalize(join(CMS_DIR, `${slug}.md`));
-  if (!filePath.startsWith(CMS_DIR)) return sendJson(res, 400, { error: 'Invalid CMS path.' });
-  if (mode === 'create' && existsSync(filePath)) return sendJson(res, 409, { error: 'This CMS page already exists.' });
-  if (mode === 'update' && !existsSync(filePath)) return sendJson(res, 404, { error: 'CMS page not found.' });
+  if (mode === 'create' && getContentPageRecord('cms', slug)) return sendJson(res, 409, { error: 'This CMS page already exists.' });
+  if (mode === 'update' && !getContentPageRecord('cms', slug)) return sendJson(res, 404, { error: 'CMS page not found.' });
 
-  const raw = serializeCmsPage({
+  saveContentPageRecord({
+    type: 'cms',
+    slug,
+    title,
     meta: { title, description, excerpt, coverImage, layout, roles, editor: user.name || '' },
-    markdown: markdown.trim() || `# ${title}\n\nWrite your page here.\n`
+    markdown: markdown.trim() || `# ${title}\n\nWrite your page here.\n`,
+    sourcePath: `cms/${slug}.md`,
+    mode
   });
-  writeFileSync(filePath, ensureTrailingNewline(raw), 'utf8');
   cmsCatalog = loadCmsCatalog();
   sendJson(res, 200, { ok: true, slug });
 }
@@ -2392,9 +2712,7 @@ async function handleSaveCmsStudioPage(req, res, user) {
 function handleDeleteCmsStudioPage(res, pathname) {
   const slug = sanitizeSlugSegment(decodeURIComponent(pathname.split('/').pop() || ''));
   if (!slug) return sendJson(res, 400, { error: 'Invalid CMS slug.' });
-  const filePath = normalize(join(CMS_DIR, `${slug}.md`));
-  if (!filePath.startsWith(CMS_DIR) || !existsSync(filePath)) return sendJson(res, 404, { error: 'CMS page not found.' });
-  unlinkSync(filePath);
+  if (!deleteContentPageRecord('cms', slug)) return sendJson(res, 404, { error: 'CMS page not found.' });
   cmsCatalog = loadCmsCatalog();
   sendJson(res, 200, { ok: true });
 }
@@ -2549,20 +2867,34 @@ function normalizeTagList(value) {
 }
 
 function loadCmsCatalog() {
-  logInfo(`Loading CMS catalog from ${CMS_DIR}`);
-  if (!existsSync(CMS_DIR)) {
-    mkdirSync(CMS_DIR, { recursive: true });
-    return { pages: [], bySlug: new Map(), home: null };
-  }
-
-  const pages = readdirSync(CMS_DIR)
-    .filter((file) => file.endsWith('.md'))
-    .map((file) => createCmsPage(join(CMS_DIR, file), file.replace(/\.md$/i, '')))
+  logInfo('Loading CMS catalog from SQLite');
+  const pages = listContentPageRecords('cms')
+    .map((record) => createCmsPageFromRecord(record))
     .sort((a, b) => a.title.localeCompare(b.title, 'de'));
   const bySlug = new Map(pages.map((page) => [page.slug, page]));
   const home = bySlug.get('index') || null;
   logInfo(`CMS catalog loaded: ${pages.length} pages`);
   return { pages, bySlug, home };
+}
+
+function createCmsPageFromRecord(record) {
+  const meta = record.meta || {};
+  const rendered = markdownToHtml(record.markdown, `page/${record.slug}`);
+  const roles = Array.isArray(meta.roles) ? meta.roles : [];
+  return {
+    slug: record.slug,
+    file: record.sourcePath || `cms/${record.slug}.md`,
+    sourcePath: record.sourcePath || `cms/${record.slug}.md`,
+    title: meta.title || record.title || titleFromSlug(record.slug),
+    description: meta.description || '',
+    excerpt: meta.excerpt || meta.description || '',
+    coverImage: meta.coverImage || '',
+    layout: normalizeCmsPageLayout(meta.layout),
+    roles,
+    html: rendered.html,
+    headings: rendered.headings,
+    markdown: record.markdown
+  };
 }
 
 function createCmsPage(filePath, slug) {
@@ -4159,59 +4491,36 @@ function getCategoryDirFromPolicySlug(slug) {
 }
 
 function getEditablePage(slug) {
-  if (slug === '__home') {
-    if (!existsSync(HOME_PATH)) return null;
-    const raw = readFileSync(HOME_PATH, 'utf8');
-    const parsed = parseFrontmatter(raw);
-    return {
-      slug,
-      title: 'Home',
-      relativePath: 'home.md',
-      filePath: HOME_PATH,
-      raw,
-      markdown: parsed.markdown,
-      meta: extractEditablePageMeta(parsed.meta),
-      extraMeta: extractExtraPageMeta(parsed.meta)
-    };
-  }
-
-  const policy = catalog.bySlug.get(slug);
-  if (!policy?.file || !existsSync(policy.file)) return null;
-  const raw = readFileSync(policy.file, 'utf8');
-  const parsed = parseFrontmatter(raw);
+  const record = getContentPageRecord('doc', slug);
+  if (!record) return null;
+  const raw = serializeEditablePage({ meta: record.meta, markdown: record.markdown });
   return {
     slug,
-    title: policy.title,
-    relativePath: toContentRelativePath(policy.file),
-    filePath: policy.file,
+    title: record.title,
+    relativePath: record.sourcePath || (slug === '__home' ? 'home.md' : `docs/${slug}.md`),
+    filePath: record.sourcePath || `content:${record.type}:${record.slug}`,
     raw,
-    markdown: parsed.markdown,
-    meta: extractEditablePageMeta(parsed.meta),
-    extraMeta: extractExtraPageMeta(parsed.meta)
+    markdown: record.markdown,
+    meta: extractEditablePageMeta(record.meta),
+    extraMeta: extractExtraPageMeta(record.meta)
   };
 }
 
 function readCategoryMeta(relativeDir) {
-  const filePath = resolveDocsPath(relativeDir ? `${relativeDir}/category.json` : 'category.json');
-  if (!existsSync(filePath)) return {};
-  try {
-    return JSON.parse(readFileSync(filePath, 'utf8'));
-  } catch (error) {
-    logWarn(`Invalid category file ignored for ${relativeDir || '.'}`, error instanceof Error ? error.message : String(error));
-    return {};
-  }
+  return getContentCategoryRecord(relativeDir)?.meta || {};
 }
 
 function writeCategoryMeta(relativeDir, meta) {
-  const directoryPath = resolveDocsDirectory(relativeDir);
-  if (!existsSync(directoryPath)) mkdirSync(directoryPath, { recursive: true });
-  const filePath = resolveDocsPath(relativeDir ? `${relativeDir}/category.json` : 'category.json');
-  const payload = {
-    label: String(meta.label || '').trim(),
-    position: Number.isFinite(Number(meta.position)) ? Number(meta.position) : 999,
-    roles: Array.isArray(meta.roles) ? meta.roles : []
-  };
-  writeFileSync(filePath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+  saveContentCategoryRecord({
+    relativeDir,
+    sourcePath: relativeDir ? `docs/${sanitizeRelativeDir(relativeDir)}/category.json` : 'docs/category.json',
+    meta: {
+      label: String(meta.label || '').trim(),
+      position: Number.isFinite(Number(meta.position)) ? Number(meta.position) : 999,
+      roles: Array.isArray(meta.roles) ? meta.roles : []
+    },
+    mode: getContentCategoryRecord(relativeDir) ? 'update' : 'create'
+  });
 }
 
 function sanitizeRelativeDir(value = '') {
@@ -4558,6 +4867,19 @@ function buildPluginContext(extra = {}) {
     formatDisplayDate,
     getCurrentUser,
     publicUser,
+    loadDocumentationCatalog: loadCatalog,
+    getEditableContentTree,
+    handleGetEditablePage,
+    handleSaveEditablePage,
+    handleGetEditableCategory,
+    handleSaveEditableCategory,
+    listContentPageRecords,
+    getContentPageRecord,
+    saveContentPageRecord,
+    deleteContentPageRecord,
+    listContentCategoryRecords,
+    getContentCategoryRecord,
+    saveContentCategoryRecord,
     logInfo,
     logWarn,
     logError,

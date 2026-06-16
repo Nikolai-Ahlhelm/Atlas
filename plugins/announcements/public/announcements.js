@@ -43,8 +43,10 @@
           ${items.map(renderBannerItem).join('')}
         </div>
       `;
+      const readingArea = document.querySelector('.workspace > .content');
       const topbar = document.querySelector('.topbar');
-      if (topbar) topbar.insertAdjacentElement('afterend', banner);
+      if (readingArea) readingArea.prepend(banner);
+      else if (topbar) topbar.insertAdjacentElement('afterend', banner);
       else document.body.prepend(banner);
       banner.querySelectorAll('[data-banner-ack]').forEach((button) => button.addEventListener('click', async () => {
         await acknowledge(Number(button.dataset.bannerAck));

@@ -19,9 +19,7 @@ export default function createBlogPlugin({ manifest, rootDir }) {
       label: manifest.name || 'Blog'
     },
     seedInitialData(context) {
-      const blogDir = getBlogDir(context);
-      if (context.existsSync(blogDir) && readdirSync(blogDir).some((file) => file.endsWith('.md'))) return;
-      if (!context.existsSync(blogDir)) context.mkdirSync(blogDir, { recursive: true });
+      if (context.listContentPageRecords('blog').length) return;
       const posts = [
         {
           slug: 'welcome-to-atlas',
@@ -49,9 +47,16 @@ export default function createBlogPlugin({ manifest, rootDir }) {
         }
       ];
       for (const post of posts) {
-        const filePath = normalize(join(blogDir, `${post.slug}.md`));
-        if (!filePath.startsWith(blogDir) || context.existsSync(filePath)) continue;
-        context.writeFileSync(filePath, context.ensureTrailingNewline(serializeBlogPost(context, post)), 'utf8');
+        if (context.getContentPageRecord('blog', post.slug)) continue;
+        context.saveContentPageRecord({
+          type: 'blog',
+          slug: post.slug,
+          title: post.meta.title,
+          meta: post.meta,
+          markdown: post.markdown,
+          sourcePath: `blog/${post.slug}.md`,
+          mode: 'create'
+        });
       }
     },
     async handleRequest(context) {
@@ -137,19 +142,37 @@ export default function createBlogPlugin({ manifest, rootDir }) {
   }
 
   function getBlogCatalog(context) {
-    const blogDir = getBlogDir(context);
-    context.logInfo(`Loading blog catalog from ${blogDir}`);
-    if (!context.existsSync(blogDir)) {
-      context.mkdirSync(blogDir, { recursive: true });
-      return { posts: [], bySlug: new Map() };
-    }
-    const posts = readdirSync(blogDir)
-      .filter((file) => file.endsWith('.md'))
-      .map((file) => createBlogPost(context, join(blogDir, file), file.replace(/\.md$/i, '')))
+    context.logInfo('Loading blog catalog from SQLite');
+    const posts = context.listContentPageRecords('blog')
+      .map((record) => createBlogPostFromRecord(context, record))
       .sort((a, b) => compareBlogPosts(b, a));
     const bySlug = new Map(posts.map((post) => [post.slug, post]));
     context.logInfo(`Blog catalog loaded: ${posts.length} posts`);
     return { posts, bySlug };
+  }
+
+  function createBlogPostFromRecord(context, record) {
+    const meta = record.meta || {};
+    const rendered = context.markdownToHtml(record.markdown, `blog/${record.slug}`);
+    const publishedAt = normalizeBlogDate(meta.publishedAt || meta.date || meta.published || '') || record.updatedAt || record.createdAt;
+    const updatedAt = normalizeBlogDate(meta.updatedAt || '') || record.updatedAt || publishedAt;
+    const roles = Array.isArray(meta.roles) ? meta.roles : [];
+    return {
+      slug: record.slug,
+      file: record.sourcePath || `blog/${record.slug}.md`,
+      sourcePath: record.sourcePath || `blog/${record.slug}.md`,
+      title: meta.title || record.title || context.titleFromSlug(record.slug),
+      description: meta.description || '',
+      excerpt: meta.excerpt || meta.description || '',
+      author: meta.author || '',
+      coverImage: meta.coverImage || '',
+      publishedAt,
+      updatedAt,
+      roles,
+      html: rendered.html,
+      headings: rendered.headings,
+      markdown: record.markdown
+    };
   }
 
   function createBlogPost(context, filePath, slug) {
@@ -203,14 +226,13 @@ export default function createBlogPlugin({ manifest, rootDir }) {
   function getEditableBlogPost(context, slug) {
     const safeSlug = context.slugify(String(slug || '').trim());
     if (!safeSlug) return null;
-    const filePath = normalize(join(getBlogDir(context), `${safeSlug}.md`));
-    if (!filePath.startsWith(getBlogDir(context)) || !context.existsSync(filePath)) return null;
-    const raw = context.readFileSync(filePath, 'utf8');
-    const parsed = context.parseFrontmatter(raw);
+    const record = context.getContentPageRecord('blog', safeSlug);
+    if (!record) return null;
+    const parsed = { meta: record.meta, markdown: record.markdown };
     return {
       slug: safeSlug,
-      filePath,
-      relativePath: `content/blog/${safeSlug}.md`,
+      filePath: record.sourcePath || `blog/${safeSlug}.md`,
+      relativePath: `content/${record.sourcePath || `blog/${safeSlug}.md`}`,
       markdown: parsed.markdown,
       meta: {
         title: String(parsed.meta.title || '').trim(),
@@ -247,38 +269,39 @@ export default function createBlogPlugin({ manifest, rootDir }) {
     if (!slug) return context.sendJson(context.res, 400, { error: 'A blog slug is required.' });
     if (!title) return context.sendJson(context.res, 400, { error: 'A blog title is required.' });
 
-    const blogDir = getBlogDir(context);
-    if (!context.existsSync(blogDir)) context.mkdirSync(blogDir, { recursive: true });
-    const filePath = normalize(join(blogDir, `${slug}.md`));
-    if (!filePath.startsWith(blogDir)) return context.sendJson(context.res, 400, { error: 'Invalid blog path.' });
-    if (mode === 'create' && context.existsSync(filePath)) return context.sendJson(context.res, 409, { error: 'This blog post already exists.' });
-    if (mode === 'update' && !context.existsSync(filePath)) return context.sendJson(context.res, 404, { error: 'Blog post not found.' });
+    if (mode === 'create' && context.getContentPageRecord('blog', slug)) return context.sendJson(context.res, 409, { error: 'This blog post already exists.' });
+    if (mode === 'update' && !context.getContentPageRecord('blog', slug)) return context.sendJson(context.res, 404, { error: 'Blog post not found.' });
 
-    const raw = serializeBlogPost(context, {
+    const meta = {
+      title,
+      description,
+      excerpt,
+      author,
+      publishedAt: publishedAt || new Date().toISOString().slice(0, 10),
+      coverImage,
+      roles
+    };
+    context.saveContentPageRecord({
+      type: 'blog',
+      slug,
+      title,
       meta: {
-        title,
-        description,
-        excerpt,
-        author,
-        publishedAt: publishedAt || new Date().toISOString().slice(0, 10),
-        coverImage,
-        roles
+        ...meta
       },
-      markdown: markdown.trim() || `# ${title}\n\n${context.tf(context.locale, 'blogWriteStoryHere', 'Write your story here.')}\n`
+      markdown: markdown.trim() || `# ${title}\n\n${context.tf(context.locale, 'blogWriteStoryHere', 'Write your story here.')}\n`,
+      sourcePath: `blog/${slug}.md`,
+      mode
     });
-    context.writeFileSync(filePath, context.ensureTrailingNewline(raw), 'utf8');
-    context.logInfo(`Blog post ${mode === 'create' ? 'created' : 'updated'}: ${slug}`, { file: filePath });
+    context.logInfo(`Blog post ${mode === 'create' ? 'created' : 'updated'}: ${slug}`, { sourcePath: `blog/${slug}.md` });
     context.sendJson(context.res, 200, { ok: true, slug });
   }
 
   function handleDeleteAdminBlogPost(context) {
     const slug = context.slugify(decodeURIComponent(context.url.pathname.split('/').pop() || ''));
     if (!slug) return context.sendJson(context.res, 400, { error: 'Invalid blog slug.' });
-    const filePath = normalize(join(getBlogDir(context), `${slug}.md`));
-    if (!filePath.startsWith(getBlogDir(context)) || !context.existsSync(filePath)) {
+    if (!context.deleteContentPageRecord('blog', slug)) {
       return context.sendJson(context.res, 404, { error: 'Blog post not found.' });
     }
-    context.unlinkSync(filePath);
     context.sendJson(context.res, 200, { ok: true });
   }
 
