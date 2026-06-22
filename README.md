@@ -143,6 +143,17 @@ _________________
 
 # 📒 Changelog
 
+## Version 0.4.0
+- New: Announcements plugin
+- New: Forum plugin
+- New: Q&A plugin
+- New: Tasks plugin
+- New: Editable documentation, CMS pages and blog posts are now persisted in SQLite.
+- New: Automatic first-start migration imports existing Markdown content into the database.
+- Change: Database content now wins over bundled Markdown files during Docker/image updates.
+- Fix: Docker updates no longer replace or remove edited CMS pages when `/app/data` is persisted.
+- Fix: Deleted editable pages stay deleted and are not recreated from bundled starter files on restart.
+
 ## Version 0.3.2 
 - New: Changelog Plugin (Track changes in sortable and customizable tables)
 - New: Navbar editor (Visual editor for your navbar in the admin settings)
