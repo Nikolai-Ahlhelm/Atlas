@@ -1,0 +1,6 @@
+{
+  "key": "forum",
+  "name": "Forum",
+  "version": "0.1.0",
+  "description": "Structured community discussions with categories, threads, replies, tags, reactions and moderation."
+}

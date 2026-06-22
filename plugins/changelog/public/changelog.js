@@ -29,7 +29,6 @@
     activeColumnMenuStyle: null,
     activeEntryPicker: '',
     activeEntryPickerStyle: null,
-    toastTimeout: null,
     editor: {
       open: false,
       mode: 'create',
@@ -1614,21 +1613,9 @@
   }
 
   function showToast(message) {
-    let toast = document.querySelector('[data-changelog-toast]');
-    if (!toast) {
-      toast = document.createElement('div');
-      toast.className = 'admin-toast success';
-      toast.setAttribute('data-changelog-toast', '');
-      toast.setAttribute('role', 'status');
-      toast.setAttribute('aria-live', 'polite');
-      document.body.appendChild(toast);
+    if (typeof window.DisplayPopupMsg === 'function') {
+      window.DisplayPopupMsg(message);
     }
-    toast.textContent = message;
-    toast.hidden = false;
-    clearTimeout(state.toastTimeout);
-    state.toastTimeout = setTimeout(() => {
-      toast.hidden = true;
-    }, 2400);
   }
 
   function formatDateTime(value) {

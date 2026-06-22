@@ -1,0 +1,12 @@
+[19:59:15.884] [INFO] Initializing database at D:\GitHub\Atlas\data\data.sqlite
+[19:59:15.889] [INFO] Loading documentation catalog from D:\GitHub\Atlas\content\docs
+[19:59:15.898] [INFO] Documentation catalog loaded: 6 documents, 3 top-level sidebar entries
+[19:59:15.899] [INFO] Seeding factory defaults
+[19:59:15.902] [INFO] Database initialization completed
+[19:59:15.902] [INFO] Loading CMS catalog from D:\GitHub\Atlas\content\cms
+[19:59:15.902] [INFO] CMS catalog loaded: 1 pages
+[19:59:15.923] [INFO] Atlas is running at http://127.0.0.1:3002
+[19:59:53.446] [INFO] Loaded locales: ar, de, en, es, fr, hi, it, ja, ko, nl, pl, pt, ru, sv, tr, zh
+[19:59:53.473] [INFO] Loaded plugin locales: announcements(de,en), blog(ar,de,en,es,fr,hi,it,ja,ko,nl,pl,pt,ru,sv,tr,zh), changelog(ar,de,en,es,fr,hi,it,ja,ko,nl,pl,pt,ru,sv,tr,zh), directory(de,en), documentation(ar,de,en,es,fr,hi,it,ja,ko,nl,pl,pt,ru,sv,tr,zh), download_center(ar,de,en,es,fr,hi,it,ja,ko,nl,pl,pt,ru,sv,tr,zh), events(de,en), forms(ar,de,en,es,fr,hi,it,ja,ko,nl,pl,pt,ru,sv,tr,zh), forum(de,en), qa(de,en), tasks(de,en)
+[19:59:53.589] [INFO] User admin@admin.com logged in successfully
+[20:00:10.819] [INFO] User admin@admin.com logged in successfully

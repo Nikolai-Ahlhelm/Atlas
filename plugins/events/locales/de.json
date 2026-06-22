@@ -1,0 +1,36 @@
+{
+  "feature": {
+    "label": "Events",
+    "description": "Kalender-Events mit RSVP, Wiederholungen, Warteliste und iCal-Export."
+  },
+  "messages": {
+    "events": "Events",
+    "createEvent": "Event erstellen",
+    "eventDetails": "Event-Details",
+    "eventEditor": "Event-Editor",
+    "openEvents": "Events öffnen",
+    "eventsFeatureDisabled": "Die Events-Funktion ist derzeit deaktiviert.",
+    "eventsFeatureDisabledNotice": "Die Events-Funktion ist derzeit deaktiviert.",
+    "eventsPermissionRequired": "Events-Berechtigungen erforderlich.",
+    "eventsViewRequired": "Events-Berechtigungen sind erforderlich.",
+    "eventsCreateRequired": "Erstellberechtigung erforderlich.",
+    "eventsEditRequired": "Bearbeitungsberechtigung erforderlich.",
+    "eventsDeleteRequired": "Löschberechtigung erforderlich.",
+    "eventNotFound": "Event nicht gefunden.",
+    "searchEvents": "Events suchen",
+    "allVisibility": "Alle Sichtbarkeiten",
+    "maxParticipants": "Max. Teilnehmer",
+    "allDay": "Ganztägig",
+    "recurrence": "Wiederholung",
+    "interval": "Intervall",
+    "endsAt": "Endet am",
+    "reminderEnabled": "Reminder aktiv",
+    "reminderMinutes": "Reminder-Minuten",
+    "icalExport": "iCal exportieren",
+    "waitlist": "Warteliste",
+    "capacity": "Kapazität",
+    "participants": "Teilnehmer",
+    "deleteEventConfirm": "Dieses Event löschen?",
+    "permissionsSaved": "Berechtigungen gespeichert."
+  }
+}
